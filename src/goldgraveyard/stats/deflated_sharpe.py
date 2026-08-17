@@ -4,33 +4,35 @@ THE PROBLEM
     Test 8 signals -- really more, once you count every variant you quietly
     tried -- and the best one looks good even if all 8 are worthless. The
     maximum of N noisy Sharpes has a positive expectation that grows with N.
+    Your job is to work out what that expectation is and subtract it.
 
-THE FIX, IN TWO PARTS
-    1. Expected maximum Sharpe under the null. If you run N independent trials
-       whose true Sharpe is zero and whose Sharpe estimates have variance V,
-       the expected best is approximately
+THE TWO QUESTIONS YOU HAVE TO ANSWER
+    1. If N strategies with TRUE Sharpe of zero are tested, how high does the
+       best one's MEASURED Sharpe get, on average, by luck alone? That number
+       is the bar. Anything below it is indistinguishable from noise.
+       (Hint: this is an extreme-value question about the max of N draws.)
 
-           E[max SR] ~= sqrt(V) * ( (1-g) * z(1 - 1/N) + g * z(1 - 1/(N*e)) )
+    2. Given an observed Sharpe, how confident can you be that the true Sharpe
+       exceeds that bar? This needs a standard error for the Sharpe estimator
+       itself -- and the naive one is wrong, because it assumes returns are
+       normal. Work out how skew and kurtosis should move that standard error,
+       and sanity-check the sign of each effect before you trust the algebra:
+       should a strategy that grinds up and crashes down get MORE or LESS
+       credit than a symmetric one at the same Sharpe?
 
-       where g is Euler-Mascheroni and z is the standard normal quantile. That
-       is the bar luck alone clears -- the "Sharpe you must beat to be boring".
+    DSR is (2) evaluated at the bar from (1). Below 0.95 -> DEAD.
 
-    2. The Probabilistic Sharpe Ratio of the observed Sharpe AGAINST that bar,
-       using a standard error that corrects for skew and kurtosis:
+WHERE TO GET THE MATH
+    Bailey & Lopez de Prado (2014), "The Deflated Sharpe Ratio: Correcting for
+    Selection Bias, Backtest Overfitting and Non-Normality", Journal of
+    Portfolio Management 40(5), 94-107. Section 2 gives the Probabilistic
+    Sharpe Ratio, Section 3 the deflation. Derive it from the paper rather
+    than from a blog post -- the blog versions routinely drop the (T-1) or
+    misstate the kurtosis convention, and you will not catch it.
 
-           PSR(SR*) = Phi( (SR - SR*) * sqrt(T-1)
-                           / sqrt(1 - skew*SR + (kurt-1)/4 * SR^2) )
-
-       Negative skew and fat tails INFLATE the denominator, which is exactly
-       right: a strategy that makes money slowly and loses it all at once has a
-       less trustworthy Sharpe than its point estimate suggests.
-
-    DSR = PSR evaluated at SR* = E[max SR]. Read it as a probability the true
-    Sharpe exceeds zero given how hard you looked. Below 0.95 -> DEAD.
-
-REFERENCES
-    Bailey & Lopez de Prado (2014), "The Deflated Sharpe Ratio", J. Portfolio
-    Management 40(5). Read section 3 before implementing.
+    Watch the kurtosis convention: RAW fourth moment (normal = 3) vs EXCESS
+    (normal = 0). Pandas .kurt() returns excess. Getting this wrong shifts
+    every DSR in the project in the same direction, so it will look plausible.
 """
 
 from __future__ import annotations
@@ -45,12 +47,20 @@ def probabilistic_sharpe(
     skew: float,
     kurtosis: float,
 ) -> float:
-    """PSR: P(true SR > benchmark_sr). kurtosis is the RAW fourth moment (3.0 = normal)."""
+    """P(true SR > benchmark_sr), given the observed Sharpe and its higher moments.
+
+    Decide and document your kurtosis convention in the docstring before you
+    write the body. tests/test_stats.py assumes RAW (normal = 3.0).
+    """
     raise NotImplementedError
 
 
 def expected_max_sharpe(n_trials: int, sr_variance: float) -> float:
-    """E[max SR] across n_trials independent zero-skill trials."""
+    """E[max SR] across n_trials independent zero-skill trials.
+
+    sr_variance is the variance of the Sharpe ESTIMATES across those trials,
+    not the variance of returns. Be clear with yourself about which you have.
+    """
     raise NotImplementedError
 
 
@@ -64,6 +74,6 @@ def deflated_sharpe(
 
     n_trials is the honest count of EVERY variant tried across the project,
     not the 8 in the headline table. Under-reporting it is how people cheat
-    this test without noticing.
+    this test without noticing. See DECISIONS.md section 6.
     """
     raise NotImplementedError
