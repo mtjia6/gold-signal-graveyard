@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data: never commit fetched market data. Cached, reproducible via fetch_data.py.
+data/raw/
+data/cache/
+
+# Generated output. Committed only when it is a real, final result.
+reports/figures/*.png
+
+# macOS
+.DS_Store
