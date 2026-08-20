@@ -39,7 +39,40 @@ def test_psr_at_own_sharpe_is_half():
 
 
 def test_negative_skew_lowers_psr():
-    """Slow-gains/fast-losses profiles deserve less confidence at the same Sharpe."""
-    hi = probabilistic_sharpe(1.0, 0.0, 1000, 0.0, 3.0)
-    lo = probabilistic_sharpe(1.0, 0.0, 1000, -2.0, 3.0)
+    """Slow-gains/fast-losses profiles deserve less confidence at the same Sharpe.
+
+    Uses a PER-PERIOD Sharpe of 0.033, the daily figure this project actually
+    produces, rather than 1.0. At SR = 1.0 with n = 1000 the z-scores are 25.8 and
+    16.9, so the property holds by a wide margin but both CDFs round to exactly
+    1.0 in float64 and the test cannot see it. Testing at realistic magnitudes is
+    the stronger check, not the weaker one.
+    """
+    hi = probabilistic_sharpe(0.033, 0.0, 1982, 0.0, 3.0)
+    lo = probabilistic_sharpe(0.033, 0.0, 1982, -2.0, 3.0)
     assert lo < hi
+
+
+def test_positive_skew_raises_psr():
+    """The mirror image, so a sign flip cannot pass both tests."""
+    base = probabilistic_sharpe(0.033, 0.0, 1982, 0.0, 3.0)
+    pos = probabilistic_sharpe(0.033, 0.0, 1982, +2.0, 3.0)
+    assert pos > base
+
+
+def test_fat_tails_lower_psr():
+    """Higher kurtosis widens the standard error, so confidence falls."""
+    normal = probabilistic_sharpe(0.033, 0.0, 1982, 0.0, 3.0)
+    fat = probabilistic_sharpe(0.033, 0.0, 1982, 0.0, 12.0)
+    assert fat < normal
+
+
+def test_more_observations_raise_psr():
+    """A longer track record at the same Sharpe is more convincing."""
+    short = probabilistic_sharpe(0.033, 0.0, 500, 0.0, 3.0)
+    long = probabilistic_sharpe(0.033, 0.0, 5000, 0.0, 3.0)
+    assert long > short
+
+
+def test_psr_returns_nan_when_variance_is_non_positive():
+    """Extreme skew can drive the variance term negative. No probability exists."""
+    assert np.isnan(probabilistic_sharpe(1.0, 0.0, 1000, 10.0, 3.0))

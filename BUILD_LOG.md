@@ -1349,16 +1349,227 @@ daily bars, HAC and naive agreeing is itself the finding.
 
 ---
 
+## Entry 19, 2026-08-21, Probabilistic Sharpe Ratio, and two traps of very unequal size
+
+`probabilistic_sharpe` implemented, stage one of the Deflated Sharpe.
+
+```python
+variance = 1 - skew * sr + ((kurtosis - 1) / 4) * sr**2
+z = (sr - benchmark) * sqrt(n - 1) / sqrt(variance)
+return norm.cdf(z)
+```
+
+The denominator is the standard error of the Sharpe estimator corrected for
+non-normality. Under normality, skew 0 and raw kurtosis 3, it reduces to
+`sqrt(1 + sr**2 / 2)`, the classical Lo (2002) result. Returns nan rather than raising
+when the variance term is non-positive, which extreme skew can produce and which has no
+probability attached to it.
+
+### Result on `ma_cross` out of sample
+
+```
+n                 1982
+Sharpe annual     +0.5227
+Sharpe per day    +0.03293
+skew              -0.5150
+kurtosis excess   +4.7079
+kurtosis raw      +7.7079
+
+PSR vs benchmark 0    0.9267
+Phi(HAC t = 1.472)    0.9295     normal-assumption reference
+```
+
+### The finding: the two conventions differ enormously in how much they matter
+
+Both were flagged in advance as traps. Measured, they are not comparable.
+
+**Frequency consistency is catastrophic.** The Sharpe and the observation count must
+refer to the same period. Passing the annualized 0.523 against a daily n of 1982
+inflates the numerator by sqrt(252):
+
+```
+correct, per-day 0.033 against n=1982   ->  PSR 0.9267
+wrong, annualized 0.523 against n=1982  ->  PSR 1.0000
+```
+
+A certainty, from a signal that cannot clear a t-statistic of 2.
+
+**The kurtosis convention is negligible at this frequency.**
+
+```
+correct, raw kurtosis 7.71             ->  PSR 0.9267
+wrong, excess 4.71 passed as raw       ->  PSR 0.9268
+```
+
+A difference of 0.0001. The reason is structural rather than a property of this
+dataset: both correction terms are scaled by the per-period Sharpe.
+
+```
+skew term      -(-0.515)(0.033)      = +0.0170
+kurtosis term  ((7.71-1)/4)(0.033^2) = +0.0018
+variance       1.0188   ->   sqrt = 1.0094
+```
+
+The standard error is inflated by 0.94 percent in total. Gold's tails are genuinely fat,
+excess kurtosis 4.7, but the kurtosis term carries a factor of SR squared and 0.033
+squared is 0.001. **At daily frequency the higher moments barely enter PSR.** They
+matter at monthly or annual frequency, where the per-period Sharpe is an order of
+magnitude larger.
+
+**This corrects an overstatement made in Entry 3 and repeated in the docstring**, which
+claimed the kurtosis mistake "shifts every result in the project in the same direction".
+It does, and by an amount too small to observe. The docstring now records the measured
+figures and contrasts them with the frequency trap, so a future reader does not go
+hunting for a large effect that is not there.
+
+### A test that was wrong, not the code
+
+`test_negative_skew_lowers_psr` failed on first run. Investigation showed the property
+holds by a wide margin and the test could not observe it: at SR 1.0 with n 1000 the
+z-scores are 25.807 and 16.895, and both CDFs round to exactly 1.0 in float64.
+
+Rewritten at per-day magnitudes, SR 0.033 against n 1982, where the effect is visible.
+Four further sign checks added, so that no single sign flip can pass the suite: positive
+skew raises PSR, higher kurtosis lowers it, more observations raise it, and a
+non-positive variance term returns nan.
+
+Testing at the magnitudes the project actually produces is the stronger check. The
+original parameters were chosen for readability and happened to be numerically blind.
+
+---
+
+## Entry 20, 2026-08-21, The first verdict. `ma_cross` is DEAD.
+
+`expected_max_sharpe` implemented, `deflated_sharpe` wired, the trial ledger filled, and
+the first signal adjudicated against the frozen rule.
+
+### `expected_max_sharpe(n_trials, sr_variance)`
+
+```python
+gamma = np.euler_gamma
+z1 = norm.ppf(1 - 1/N)
+z2 = norm.ppf(1 - 1/(N * e))
+return sqrt(V) * ((1 - gamma) * z1 + gamma * z2)
+```
+
+The expected maximum of N draws from a normal distribution, from extreme value theory.
+The maximum of N standard normals concentrates around sqrt(2 ln N), and the two quantile
+expression is the standard refinement.
+
+Read it as **the bar that luck alone clears.** If N worthless strategies are tested, the
+best of them will look about this good.
+
+`N < 2` returns 0. One trial means no selection took place, so there is no selection bias
+to correct. The formula cannot express this, since `norm.ppf(1 - 1/1)` is `norm.ppf(0)`,
+negative infinity.
+
+### `deflated_sharpe`
+
+PSR evaluated against the expected maximum bar rather than against zero.
+
+**The function computes the Sharpe as `mean/std` on the raw series with no
+annualization**, so it lines up with `n_obs` by construction. `periods_per_year` is
+accepted for interface consistency and deliberately unused: annualizing inside this
+function would reintroduce the frequency mismatch that `probabilistic_sharpe` cannot
+detect, and the wrapper is the only place that mismatch can be prevented.
+
+### The verdict on `ma_cross`
+
+```
+observed Sharpe, out of sample   +0.523 annualized   (0.03293 per day)
+expected-max bar at N = 8        +0.520 annualized   (0.03278 per day)
+difference                       +0.003
+
+PSR against zero                  0.9267
+DEFLATED SHARPE                   0.5026
+verdict, needs > 0.95             DEAD
+```
+
+Nearly eight years of untouched out of sample data, and the signal beats the luckiest of
+eight coin flippers by three thousandths of a Sharpe ratio. A Deflated Sharpe of 0.5026
+is the formal statement that it is a coin toss whether this strategy is better than
+nothing.
+
+### The bar as a function of N
+
+```
+N     1:  0.000      no selection, nothing to correct
+N     2:  +0.185
+N     8:  +0.520     <- ma_cross observes +0.523
+N    20:  +0.678
+N   100:  +0.903
+N  1000:  +1.161
+```
+
+The sqrt(2 ln N) growth is visible: 8 to 1000 is a 125 fold increase in trials and
+roughly a doubling of the bar. Testing more things is punished, and gently.
+
+### The table that is the entire project
+
+The same return series, judged against different honest trial counts:
+
+```
+N =  1:  DSR = 0.9267     "looks good"
+N =  4:  DSR = 0.6589
+N =  8:  DSR = 0.5026     the honest count
+N = 16:  DSR = 0.3700
+N = 50:  DSR = 0.2109
+```
+
+**Nothing about the strategy changes across those rows.** Only the honesty of the
+accounting does. And N is the single input that cannot be audited from outside the
+project, which is precisely why the ledger is dated and written down in advance rather
+than reconstructed once the number is known.
+
+### The trial ledger, and a correction to how it was being counted
+
+Filled at **N = 8**. The definition was sharpened by Miguel and the previous count was
+wrong: it was counting executions rather than candidates.
+
+**A trial is a distinct strategy configuration that was a candidate to become the
+reported result.** Consequences:
+
+| Situation | Trials |
+|---|---|
+| One signal at 2 bp and again at 4 bp | 1, a cost sensitivity check |
+| One signal in sample and out of sample | 1, two views of one candidate |
+| Eight distinct signals | 8 |
+| Four parameter settings tried, best kept | 4, a selection was made |
+| `50/200` frozen from folklore, never varied | 1, no selection occurred |
+| Cheat signals used to verify the engine | 0, never candidates |
+| The overfitting sidecar grid search | 0 here, it carries its own DSR |
+
+The weighting is toward parameter searches. A sweep over 100 moving average pairs is 100
+trials even though it is one line of code, because the selection among them is exactly
+what the correction penalises.
+
+**Worth stating plainly: freezing `50/200` in advance was worth about 0.15 of Deflated
+Sharpe** compared to having searched four pairs and kept the best. The pre-registration
+is not paperwork; it is a term in the arithmetic.
+
+### How to read this result
+
+`ma_cross` is dead, and that is the framework working rather than failing. A moving
+average crossover on gold, run honestly, cannot be distinguished from the best of eight
+lucky coin flips. The signal was never expected to survive; what matters is that the
+machinery said so with a number and a reason rather than with an opinion.
+
+Cause of death, under the frozen verdict rule, is condition 2: Deflated Sharpe 0.5026,
+below the 0.95 threshold. Conditions 1 and 3 were not reached, since the rule records the
+first condition failed.
+
+---
+
 ## Current state at a glance
 
 | | |
 |---|---|
 | Commits | 4 (through `04feaf3`) |
-| Uncommitted | `sizing.py`, `costs.py`, `metrics.py`, `backtest.py`, `ma_cross.py`, `signals/__init__.py`, `run_gauntlet.py`, `CONCEPTS.md`, `CLAUDE.md`, log entries 10-18 |
-| Functions implemented | 11 of 41 (plus helpers) |
-| Tests | 16 passing, 4 failing (the 4 failures are by design) |
+| Uncommitted | `sizing.py`, `costs.py`, `metrics.py`, `backtest.py`, `ma_cross.py`, `signals/__init__.py`, `run_gauntlet.py`, `CONCEPTS.md`, `CLAUDE.md`, log entries 19-20, DECISIONS.md ledger |
+| Functions implemented | 14 of 41 (plus helpers) |
+| Tests | 23 passing, 1 failing (roll adjustment, still a stub) |
 | Linter | clean |
-| Real results produced | `ma_cross`: OOS Sharpe 0.523, HAC t 1.47, not significant |
+| Real results produced | `ma_cross`: OOS Sharpe 0.523, HAC t 1.47, **DSR 0.5026, DEAD** |
 
 ### Open items
 

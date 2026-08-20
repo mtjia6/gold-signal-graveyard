@@ -68,17 +68,44 @@ accept that an amendment made after seeing results invalidates the finding.
 No appeals. A signal that misses by a hair is dead; that is what a pre-registered
 threshold means.
 
-## 6. Trial ledger: the honesty tax
+## 6. Trial ledger, the honesty tax
 
-The Deflated Sharpe needs the number of trials you *actually ran*, not the eight in
-the headline table. Every variant tested at any point, including ones abandoned
-because they looked bad, goes here. Under-counting this is the one way to cheat the
-whole project without noticing you did it.
+The Deflated Sharpe needs the number of trials actually run. Undercounting it is the
+one way to defeat the whole correction without noticing.
 
-| Date | What was run | # trials | Notes |
+### What counts as a trial
+
+A **distinct strategy configuration that was a candidate to become the reported
+result.** This is narrower than an execution count, and the distinction decides the
+number:
+
+| Situation | Trials | Why |
+|---|---|---|
+| One signal run at 2 bp and again at 4 bp | **1** | Same strategy. A cost sensitivity check, not a candidate |
+| One signal evaluated in sample and out of sample | **1** | Same strategy, two views of it |
+| Eight distinct signals, each a genuine candidate | **8** | Eight candidates |
+| Four moving average pairs tried, best one kept | **4** | A selection was made among them |
+| `50/200` fixed in advance from folklore, never varied | **1** | No selection took place |
+| Cheat signals used for lookahead verification | **0** | Never candidates. Diagnostics, not strategies |
+| Overfitting sidecar grid search | **0 here** | A separate exercise, carrying its own Deflated Sharpe |
+
+The weighting is toward **parameter searches**. A search over 100 moving average pairs
+is 100 trials even though it is one line of code, because the selection among them is
+exactly what the correction exists to penalise.
+
+### Ledger
+
+| Date | What was run | Trials | Notes |
 |---|---|---|---|
-| | | | |
-| **Running total** | | **0** | |
+| 2026-08-21 | The eight registered signals, each frozen at parameters chosen in advance | **8** | `ma_cross` implemented so far. Parameters fixed in section 3 before any result, so no selection occurred within any signal |
+| 2026-08-21 | `ma_cross` at 2 bp and 4 bp | 0 | Cost sensitivity of an existing candidate |
+| 2026-08-21 | `ma_cross` in sample and out of sample | 0 | Two views of one candidate |
+| 2026-08-21 | Perfect-foresight cheat signals, engine verification | 0 | Diagnostics. Never candidates for the report |
+| **Running total** | | **8** | |
+
+**If any parameter is ever varied and the better result kept, every setting tried is
+added here**, including the ones that looked bad, on the day it happens rather than
+afterwards.
 
 ## 7. Amendments
 
