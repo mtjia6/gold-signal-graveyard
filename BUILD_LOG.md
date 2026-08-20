@@ -574,20 +574,106 @@ reproducing Case B, or the bug can silently return.
 
 ---
 
+## Entry 9 — 2026-08-20 — Fixed the cache bug, and found a second one
+
+### Fix 1: cache coverage (closes Entry 8)
+
+**The approach that does not work.** Adding `cached.index.max() >= want_end` is the
+symmetric-looking fix and it is wrong. The last row of the data is the last
+*trading day*; the requested end is a *calendar date* that is routinely a weekend,
+a holiday, or in the future. That comparison would fail on nearly every call, the
+cache would refetch every time, and it would look like it was working.
+
+**The approach taken.** Store the window that was *requested* when the file was
+written, in the Parquet file's schema metadata, and compare request against
+request. Parquet files carry an arbitrary key/value metadata dictionary alongside
+the data; two keys were added, `goldgraveyard.req_start` and
+`goldgraveyard.req_end`. The cache is reused only when the stored window contains
+the requested window at **both** ends.
+
+Two consequences worth naming:
+
+- **A cache file with no metadata is treated as unusable and refetched.** Files
+  written by the previous version have no coverage record, and a cache whose
+  coverage cannot be established must not be trusted — trusting it is the bug.
+- **A partial hit refetches the UNION of the cached and requested windows**, so
+  the cache only ever grows. Fetching just the newly requested window would let
+  two callers with overlapping ranges evict each other's data on every call.
+
+The docstring was also rewritten. The old one claimed the cache "is only reused
+when it actually spans the requested window", which the code did not do — an
+assertion of a guarantee that does not exist is worse than no comment, because it
+stops the next reader from checking.
+
+### Fix 2: the end date was off by one
+
+Found while verifying Fix 1. Rebuilding the cache produced 3,773 rows where the
+original run produced 3,772, which should not have been possible for the same
+window.
+
+**Cause: `yfinance`'s `end` parameter is exclusive.** Confirmed directly:
+
+```
+yf.download("GC=F", start="2020-12-01", end="2020-12-31") -> last row 2020-12-30
+yf.download("GC=F", start="2020-12-01", end="2021-01-01") -> last row 2020-12-31
+```
+
+2020-12-31 was a Thursday and a normal trading day. It was simply being dropped.
+
+This project's API documents its range as `[start, end]` — inclusive at both ends —
+and `DECISIONS.md` names 2026-06-30 as the sample end. 2026-06-30 is a Tuesday and
+a trading day, and it was missing from every load. The fix passes `end + 1 day` to
+yfinance, and the docstring now states the inclusive convention explicitly.
+
+**Impact:** the gold sample went from 5,152 rows ending 2026-06-29 to 5,153 rows
+ending 2026-06-30. One row. But it was the *last* row, and it was missing silently
+— which is the same failure shape as the cache bug: a plausible-looking result
+computed on not-quite-the-declared-sample.
+
+### Tests added — `tests/test_loaders.py`, 9 tests, all passing
+
+These do not touch the network. `yf.download` is monkeypatched with a fake that
+serves synthetic prices in yfinance's real shape — a `(Price, Ticker)` column
+MultiIndex — and, importantly, **reproduces the exclusive-end behaviour**. A test
+double that is more convenient than the real thing lets the suite pass while
+production breaks.
+
+The fake also counts how many times it was called. That call count is the only way
+to assert a cache *hit* actually avoided the network; the returned data looks
+identical either way.
+
+| Test | What it pins down |
+|---|---|
+| `test_exact_repeat_hits_cache` | A repeated identical call does not refetch |
+| `test_narrower_request_hits_cache` | A subset of a cached window does not refetch |
+| `test_request_extending_past_cached_end_refetches` | **The Entry 8 regression** |
+| `test_request_starting_before_cached_start_refetches` | Start-side coverage still works |
+| `test_refetch_widens_cache_rather_than_replacing_it` | Union behaviour; no thrashing |
+| `test_weekend_end_date_does_not_defeat_the_cache` | A Sunday end date is still covered |
+| `test_cache_without_metadata_is_not_trusted` | Old cache files are refetched |
+| `test_refresh_forces_network` | `refresh=True` bypasses the cache |
+| `test_end_date_is_inclusive` | Fix 2 regression |
+
+### Note on who wrote this
+
+Miguel asked for this one to be written rather than specified. Both fixes and all
+nine tests were written by Claude.
+
+---
+
 ## Current state at a glance
 
 | | |
 |---|---|
-| Commits | 3 (`2df22bf`, `649b18b`, `668c1e1`) |
-| Uncommitted | `BUILD_LOG.md`, `CLAUDE.md` |
-| Functions implemented | 1 of 41 |
-| Tests | 1 passing, 10 failing (failing by design) |
+| Commits | 4 (through `04feaf3`) |
+| Uncommitted | `loaders.py` fixes, `tests/test_loaders.py`, this log entry |
+| Functions implemented | 1 of 41 (plus 2 cache helpers) |
+| Tests | 10 passing, 10 failing (the 10 failures are by design) |
 | Linter | clean |
 | Real results produced | none |
 
 ### Open items
 
-0. **Fix the `load_yahoo` cache end-coverage bug (Entry 8) and add a regression test.**
 1. Miguel to rewrite `DECISIONS.md` in his own words and defend each parameter.
 2. Decide how to handle the 114+ corrupt bars in 2006–2011.
 3. Record in DECISIONS.md the reasoning for starting at 2006 when data exists from 2000.

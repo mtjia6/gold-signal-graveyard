@@ -15,11 +15,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import yfinance as yf
 
 CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 
 OHLCV = ("open", "high", "low", "close", "volume")
+
+# Parquet schema-metadata keys recording the window a cache file was fetched for.
+REQ_START_KEY = b"goldgraveyard.req_start"
+REQ_END_KEY = b"goldgraveyard.req_end"
 
 
 def _cache_path(symbol: str) -> Path:
@@ -63,32 +69,98 @@ def _normalize(raw: pd.DataFrame) -> pd.DataFrame:
     return df[~df.index.duplicated(keep="last")].sort_index()
 
 
+def _write_cache(df: pd.DataFrame, path: Path, start: pd.Timestamp, end: pd.Timestamp) -> None:
+    """Persist `df` along with the WINDOW THAT WAS REQUESTED when it was fetched.
+
+    The requested window is stored in the Parquet schema metadata rather than
+    inferred from the data, because the two are not the same thing. Ask for data
+    through Sunday 2026-06-30 and the last row is Monday 2026-06-29 -- the market
+    was closed, not the download truncated. Only the request tells you whether the
+    cache is complete.
+    """
+    table = pa.Table.from_pandas(df)
+    meta = dict(table.schema.metadata or {})
+    meta[REQ_START_KEY] = str(start.date()).encode()
+    meta[REQ_END_KEY] = str(end.date()).encode()
+    pq.write_table(table.replace_schema_metadata(meta), path)
+
+
+def _read_cache(path: Path) -> tuple[pd.DataFrame, pd.Timestamp, pd.Timestamp] | None:
+    """Return (frame, requested_start, requested_end), or None if unusable.
+
+    None covers an unreadable file and a file written before this metadata
+    existed. Both mean "refetch": a cache whose coverage cannot be established
+    must not be trusted, since trusting it is exactly the silent-truncation bug.
+    """
+    try:
+        table = pq.read_table(path)
+    except Exception:
+        return None
+
+    meta = table.schema.metadata or {}
+    if REQ_START_KEY not in meta or REQ_END_KEY not in meta:
+        return None
+
+    return (
+        table.to_pandas(),
+        pd.Timestamp(meta[REQ_START_KEY].decode()),
+        pd.Timestamp(meta[REQ_END_KEY].decode()),
+    )
+
+
 def load_yahoo(symbol: str, start: str, end: str, *, refresh: bool = False) -> pd.DataFrame:
     """Daily OHLCV for `symbol`, tz-naive DatetimeIndex, cached to parquet.
 
     Returns columns: open, high, low, close, volume (lowercase).
 
-    The cache is keyed on symbol alone, so a cached frame is only reused when it
-    actually spans the requested window; otherwise it is refetched. Without that
-    check, widening the sample in DECISIONS.md would silently return the old,
-    narrower history and every backtest would quietly run on the wrong window.
+    The range [start, end] is INCLUSIVE of both endpoints, unlike yfinance's own
+    `end`, which is exclusive.
+
+    CACHE CORRECTNESS
+        The cache file is keyed on symbol alone, so it must carry its own record
+        of which window it covers. It is reused only when the window requested at
+        fetch time fully contains the window requested now -- both ends.
+
+        Guarding only the start is not enough, and the failure is silent: a cache
+        built for 2006-2020 would satisfy a 2006-2026 request and hand back five
+        fewer years, with every downstream Sharpe computed on the wrong sample and
+        nothing raising. See BUILD_LOG.md Entry 8.
+
+        On a partial hit the refetch covers the UNION of the cached and requested
+        windows, so the cache only ever grows. Fetching just the requested window
+        would let two alternating callers evict each other's data forever.
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _cache_path(symbol)
 
     want_start, want_end = pd.Timestamp(start), pd.Timestamp(end)
+    fetch_start, fetch_end = want_start, want_end
 
     if path.exists() and not refresh:
-        cached = pd.read_parquet(path)
-        if not cached.empty and cached.index.min() <= want_start:
-            return cached.loc[want_start:want_end].copy()
+        hit = _read_cache(path)
+        if hit is not None:
+            cached, had_start, had_end = hit
+            if had_start <= want_start and had_end >= want_end:
+                return cached.loc[want_start:want_end].copy()
+            fetch_start = min(fetch_start, had_start)
+            fetch_end = max(fetch_end, had_end)
 
-    raw = yf.download(symbol, start=start, end=end, auto_adjust=False, progress=False)
+    # yfinance treats `end` as EXCLUSIVE, so asking for end=2026-06-30 returns the
+    # last bar before it. Our API documents [start, end] as inclusive -- and
+    # DECISIONS.md names 2026-06-30 as the sample end -- so add a day. Without
+    # this the final trading day of the sample is silently missing.
+    raw = yf.download(
+        symbol,
+        start=str(fetch_start.date()),
+        end=str((fetch_end + pd.Timedelta(days=1)).date()),
+        auto_adjust=False,
+        progress=False,
+    )
     if raw is None or raw.empty:
         raise RuntimeError(f"yfinance returned no data for {symbol} over [{start}, {end}]")
 
     df = _normalize(raw)
-    df.to_parquet(path)
+    _write_cache(df, path, fetch_start, fetch_end)
     return df.loc[want_start:want_end].copy()
 
 
