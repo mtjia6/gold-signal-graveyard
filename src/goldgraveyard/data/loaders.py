@@ -15,16 +15,81 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import yfinance as yf
 
 CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
+
+OHLCV = ("open", "high", "low", "close", "volume")
+
+
+def _cache_path(symbol: str) -> Path:
+    """Stable, filesystem-safe cache key. `GC=F` -> yahoo_GC_F.parquet."""
+    safe = symbol.replace("=", "_").replace(".", "_").replace("-", "_")
+    return CACHE_DIR / f"yahoo_{safe}.parquet"
+
+
+def _normalize(raw: pd.DataFrame) -> pd.DataFrame:
+    """Flatten yfinance's shape into the OHLCV contract.
+
+    yfinance >= 0.2.51 returns a 2-level column MultiIndex (Price, Ticker) even
+    for a single ticker, so `df["close"]` on the raw frame raises. Take level 0
+    by name rather than positionally: the level order is not guaranteed.
+
+    `Adj Close` is dropped. For futures there are no splits or dividends, so it
+    equals `Close`; keeping both would leave downstream code a silent choice
+    between two near-identical columns.
+    """
+    df = raw.copy()
+
+    if isinstance(df.columns, pd.MultiIndex):
+        level = "Price" if "Price" in (df.columns.names or []) else 0
+        df.columns = df.columns.get_level_values(level)
+
+    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+    df = df.drop(columns=["adj_close"], errors="ignore")
+
+    missing = [c for c in OHLCV if c not in df.columns]
+    if missing:
+        raise ValueError(f"yfinance response missing columns {missing}; got {list(df.columns)}")
+
+    df = df[list(OHLCV)]
+
+    idx = pd.DatetimeIndex(df.index)
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    df.index = idx.normalize()
+    df.index.name = "date"
+
+    return df[~df.index.duplicated(keep="last")].sort_index()
 
 
 def load_yahoo(symbol: str, start: str, end: str, *, refresh: bool = False) -> pd.DataFrame:
     """Daily OHLCV for `symbol`, tz-naive DatetimeIndex, cached to parquet.
 
     Returns columns: open, high, low, close, volume (lowercase).
+
+    The cache is keyed on symbol alone, so a cached frame is only reused when it
+    actually spans the requested window; otherwise it is refetched. Without that
+    check, widening the sample in DECISIONS.md would silently return the old,
+    narrower history and every backtest would quietly run on the wrong window.
     """
-    raise NotImplementedError
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _cache_path(symbol)
+
+    want_start, want_end = pd.Timestamp(start), pd.Timestamp(end)
+
+    if path.exists() and not refresh:
+        cached = pd.read_parquet(path)
+        if not cached.empty and cached.index.min() <= want_start:
+            return cached.loc[want_start:want_end].copy()
+
+    raw = yf.download(symbol, start=start, end=end, auto_adjust=False, progress=False)
+    if raw is None or raw.empty:
+        raise RuntimeError(f"yfinance returned no data for {symbol} over [{start}, {end}]")
+
+    df = _normalize(raw)
+    df.to_parquet(path)
+    return df.loc[want_start:want_end].copy()
 
 
 def load_fred(series_id: str, start: str, end: str, *, refresh: bool = False) -> pd.Series:
