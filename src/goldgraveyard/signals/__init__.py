@@ -26,3 +26,29 @@ def register(name: str, hypothesis: str, requires: tuple[str, ...] = ()):
         return fn
 
     return wrap
+
+
+def _load_all() -> None:
+    """Import every signal module so its @register decorator executes.
+
+    Without this the REGISTRY is empty: defining a signal in a module that nobody
+    imports registers nothing. Done at the bottom of this file, after `register`
+    exists, because each module imports `register` from here.
+
+    Explicit imports rather than a directory scan, so that adding a file is a
+    deliberate act. The Deflated Sharpe step needs an honest count of signals, and
+    a magic auto-discovery would let that count drift without anyone noticing.
+    """
+    from . import (  # noqa: F401
+        carry,
+        cot,
+        dollar,
+        gold_silver,
+        ma_cross,
+        momentum,
+        real_yield,
+        seasonality,
+    )
+
+
+_load_all()

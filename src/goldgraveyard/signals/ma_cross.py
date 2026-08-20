@@ -24,4 +24,15 @@ FAST, SLOW = 50, 200  # Frozen.
 
 @register("ma_cross", "50/200 trend persists", ("close",))
 def ma_cross(df: pd.DataFrame) -> pd.Series:
-    raise NotImplementedError
+    """+1 when SMA(FAST) > SMA(SLOW), else -1. NaN until both averages exist.
+
+    The NaN matters. Filling the first SLOW-1 rows with a position would have the
+    strategy trading before its own signal is defined, and since the fill value is
+    a constant it would look like a deliberate directional bet. Leaving NaN means
+    no position, no trade, and no P&L until the signal genuinely exists.
+    """
+    close = df["close"]
+    fast = close.rolling(FAST).mean()
+    slow = close.rolling(SLOW).mean()
+    position = (fast > slow).astype(float) * 2 - 1
+    return position.where(fast.notna() & slow.notna())

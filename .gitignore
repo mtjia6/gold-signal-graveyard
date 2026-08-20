@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+CONCEPTS.md
 
 # Data: never commit fetched market data. Cached, reproducible via fetch_data.py.
 data/raw/

@@ -8,8 +8,12 @@ project, does not know futures markets, and was not present for any of the
 conversations. Every entry should be readable on its own. Jargon gets defined the
 first time it appears.
 
+**Calculations are explained where they are introduced**, in the entry that built
+them: formula, units, frozen parameters, and a worked example, alongside the reasoning
+for why it is computed that way.
+
 **Convention:** newest entry at the bottom. Every working session appends an entry.
-Entries record *decisions and reasoning*, not just "changed file X" — git already
+Entries record *decisions and reasoning*, not just "changed file X": git already
 records that.
 
 ---
@@ -21,7 +25,7 @@ Before any entry makes sense, three things need defining.
 **Gold futures.** A futures contract is an agreement to buy or sell something at a
 set price on a set future date. Gold futures trade on COMEX under the ticker `GC`.
 Crucially, a futures contract *expires*. There is no single continuous "gold futures
-price" — there is a December 2026 contract, a February 2027 contract, and so on. The
+price": there is a December 2026 contract, a February 2027 contract, and so on. The
 "front month" is whichever contract is nearest to expiry and therefore most heavily
 traded. To get a multi-year price history you have to stitch many contracts together,
 and how you stitch them is a major source of bugs (see Entry 5's open question).
@@ -33,7 +37,7 @@ rule over historical data to see what it would have earned.
 
 **What this project is testing.** Eight signals that gold traders widely believe in.
 The goal is *not* to find one that makes money. The goal is to build an evaluation
-framework rigorous enough that we can trust the answer either way — and then honestly
+framework rigorous enough that we can trust the answer either way, and then honestly
 report which signals survive it and which don't. If seven of eight die, the project
 succeeded. The framework is the deliverable; the signals are the test subjects.
 
@@ -44,7 +48,7 @@ rather than merely unlikely.
 
 ---
 
-## Entry 1 — 2026-08-20 — Environment and toolchain
+## Entry 1: 2026-08-20: Environment and toolchain
 
 ### What was there before
 
@@ -63,7 +67,7 @@ Two problems with using it:
 ### What was installed
 
 **`uv`** (version 0.12.5), via Homebrew. `uv` is a Python package and version manager
-— it does the job of `pip`, `venv`, and `pyenv` in one tool, and it is roughly an
+it does the job of `pip`, `venv`, and `pyenv` in one tool, and it is roughly an
 order of magnitude faster than pip because it is written in Rust and caches
 aggressively.
 
@@ -77,7 +81,7 @@ What it does for this project specifically:
 - It wrote **`uv.lock`**, which records the exact version of every package *and every
   package those packages depend on*. This file is committed to git. Anyone who clones
   the repo and runs `uv sync` gets byte-for-byte the same environment. Without a lock
-  file, "it worked last month" is not reproducible — a dependency silently updates and
+  file, "it worked last month" is not reproducible: a dependency silently updates and
   results change.
 
 ### Packages installed
@@ -86,7 +90,7 @@ What it does for this project specifically:
 |---|---|
 | `pandas` | The core data structure. A `DataFrame` is a table with labelled rows and columns; here rows are trading dates and columns are prices. |
 | `numpy` | Numerical arrays; pandas is built on it. |
-| `scipy` | Statistical distributions — needed for the normal-distribution math in the Deflated Sharpe calculation. |
+| `scipy` | Statistical distributions: needed for the normal-distribution math in the Deflated Sharpe calculation. |
 | `statsmodels` | Regression with Newey–West standard errors (explained in Entry 3). |
 | `matplotlib` | Charts for the final report. |
 | `pyarrow` | Reads and writes the Parquet file format (explained in Entry 5). |
@@ -113,15 +117,15 @@ uv add somepackage         # add a dependency and update the lock file
 
 Chose `uv` over the more familiar `python -m venv` + `pip install -r requirements.txt`.
 **Cost:** a new tool to learn and slightly different commands. **Benefit:** a real
-lock file, which plain `requirements.txt` does not give you — it pins direct
+lock file, which plain `requirements.txt` does not give you: it pins direct
 dependencies but not their dependencies, so environments still drift.
 
 ---
 
-## Entry 2 — 2026-08-20 — Repository structure
+## Entry 2: 2026-08-20: Repository structure
 
 Created at `~/Documents/Dev/gold-signal-graveyard`, git-initialised, local only (not
-pushed to GitHub — the intent is to push once there is something worth showing).
+pushed to GitHub: the intent is to push once there is something worth showing).
 
 ```
 src/goldgraveyard/
@@ -158,7 +162,7 @@ subtract trading costs. The engine does all three, identically, for all eight si
 **Why this matters.** The project's central claim is "these eight signals were
 compared fairly." That claim is only true if literally the only difference between
 them is the signal logic. If each signal handled its own position sizing, then a
-signal could look better simply because it happened to take larger bets — and you
+signal could look better simply because it happened to take larger bets, and you
 would have no way to tell that apart from genuine predictive skill. Forcing everything
 through one code path makes the comparison structurally honest rather than honest by
 good intentions.
@@ -169,7 +173,7 @@ There are 41 functions defined across `src/` and `scripts/`. 38 of them consist 
 docstring and `raise NotImplementedError`. The remaining 3 are the small decorator
 that lets a signal register itself.
 
-This is deliberate. The signatures and docstrings are the *specification* — they
+This is deliberate. The signatures and docstrings are the *specification*: they
 record what each piece must do and which bug it exists to prevent. They get filled in
 one at a time. Nothing in this repo produces a number yet.
 
@@ -180,27 +184,27 @@ the intended state: the tests were written first, and they describe correct beha
 that does not exist yet. They go green one at a time as functions get implemented.
 
 The single passing test is `test_lag_is_exactly_one_bar`, which only checks that a
-constant equals 1 — it needs no implementation.
+constant equals 1: it needs no implementation.
 
 The most important failing test is `test_execution_lag_kills_same_bar_foresight`. It
 hands the engine a deliberately cheating signal that already knows today's return, and
 asserts that the engine makes approximately **zero** money from it. If the engine is
 built correctly, the one-day trading delay destroys the cheat. If that test ever
 passes trivially or the engine shows a large profit there, information is leaking from
-the future into the backtest — the most common and most destructive bug in this
+the future into the backtest: the most common and most destructive bug in this
 domain.
 
-**Commit:** `2df22bf` — "Scaffold: pre-registration, engine skeleton, and red test suite"
+**Commit:** `2df22bf`: "Scaffold: pre-registration, engine skeleton, and red test suite"
 
 ---
 
-## Entry 3 — 2026-08-20 — The pre-registration document, and a correction
+## Entry 3: 2026-08-20: The pre-registration document, and a correction
 
 ### What DECISIONS.md is
 
 A "pre-registration" is a term borrowed from clinical trials. Before running the
 experiment, you write down publicly what you are going to measure and what counts as
-success — so you cannot later change the goalposts to match whatever result you got.
+success, so you cannot later change the goalposts to match whatever result you got.
 
 `DECISIONS.md` does that here. It fixes, in advance:
 
@@ -227,7 +231,7 @@ Three terms in there need defining:
 
 - **Out-of-sample.** The history is split: the first 60% is used for building and
   checking, the last 40% is set aside and evaluated once, at the end. A rule that
-  works on data you developed it against proves nothing — you may simply have
+  works on data you developed it against proves nothing, you may simply have
   described the noise in that particular stretch of history. Out-of-sample data is the
   only real test.
 - **Sharpe Ratio.** Average return divided by volatility, annualised. It measures
@@ -239,14 +243,14 @@ Three terms in there need defining:
 ### The correction that happened here
 
 The first version of `DECISIONS.md` was written by Claude, with every parameter filled
-in — cost assumption, risk target, lookback windows, regime dates, split point. Every
+in: cost assumption, risk target, lookback windows, regime dates, split point. Every
 *code* function was still an unimplemented stub, so on a narrow reading no
 implementation had been written.
 
 Miguel pushed back, and was right to. Choosing the frozen parameters of a study is the
 intellectual content of the study. "The function bodies are empty" is a technicality,
 not a defense. The same applied to `stats/deflated_sharpe.py`, whose docstring
-originally contained the full mathematical formulas — handing over the hardest
+originally contained the full mathematical formulas: handing over the hardest
 derivation in the project.
 
 **Actions taken:**
@@ -254,7 +258,7 @@ derivation in the project.
 - The formulas in `deflated_sharpe.py` were removed and replaced with the two
   questions the math has to answer, plus a citation to the source paper: Bailey &
   López de Prado (2014), *"The Deflated Sharpe Ratio"*, Journal of Portfolio
-  Management 40(5), pp. 94–107 — Section 2 for the Probabilistic Sharpe Ratio,
+  Management 40(5), pp. 94–107: Section 2 for the Probabilistic Sharpe Ratio,
   Section 3 for the deflation. One trap is flagged but deliberately not resolved:
   pandas' `.kurt()` returns *excess* kurtosis (normal distribution = 0) while the
   paper uses *raw* kurtosis (normal = 3). Getting that backwards shifts every result
@@ -267,12 +271,12 @@ derivation in the project.
 **Open item:** DECISIONS.md still needs to be rewritten by Miguel before any result
 is computed. Until then it has no evidential value.
 
-**Commit:** `2353e4d` — "Replace DSR formulas with the derivation questions and a paper citation"
+**Commit:** `2353e4d`: "Replace DSR formulas with the derivation questions and a paper citation"
 
-### Why "Deflated" Sharpe at all — the problem it solves
+### Why "Deflated" Sharpe at all: the problem it solves
 
 Suppose you test 20 completely worthless strategies. Each one's measured Sharpe Ratio
-is noise centred on zero, but noise has spread — some come out negative, some
+is noise centred on zero, but noise has spread: some come out negative, some
 positive. The *best of the 20* will look decent purely because you took a maximum over
 20 random draws. Report only that one and you have "found" a strategy that does not
 exist.
@@ -286,7 +290,7 @@ Under-counting it is the one way to quietly defeat the entire project.
 
 ---
 
-## Entry 4 — 2026-08-20 — Checking what data is actually available
+## Entry 4: 2026-08-20: Checking what data is actually available
 
 Before writing any download code, ran a throwaway script to see what Yahoo Finance
 actually returns. Findings:
@@ -301,7 +305,7 @@ actually returns. Findings:
 that is when the CFTC's detailed positioning data begins. But price history goes back
 to 2000. So the project is voluntarily discarding five years of usable history that
 seven of the eight signals could have used, in order to keep all eight running on an
-identical window. That is a defensible trade — comparability is the whole point — but
+identical window. That is a defensible trade: comparability is the whole point, but
 it is a *choice*, and it should be written into DECISIONS.md as one rather than left
 looking accidental.
 
@@ -309,7 +313,7 @@ looking accidental.
 
 ---
 
-## Entry 5 — 2026-08-20 — `load_yahoo`: the first working code
+## Entry 5: 2026-08-20: `load_yahoo`: the first working code
 
 This is the first function in the repo that actually does something.
 
@@ -335,14 +339,14 @@ Each row is one trading day. `open` is the first traded price of the day, `close
 last, `high` and `low` the extremes, `volume` the number of contracts traded. Every
 other part of this project reads its prices through this function.
 
-It is "step 1 of the slice" — the first piece of a thin vertical slice through the
+It is "step 1 of the slice": the first piece of a thin vertical slice through the
 whole system, chosen first because everything downstream depends on it.
 
 ### What it does, step by step
 
 1. Make sure the cache directory exists.
 2. If a cache file for this symbol already exists and covers the requested dates, read
-   it from disk and return — no network call.
+   it from disk and return: no network call.
 3. Otherwise download from Yahoo Finance via the `yfinance` package.
 4. Clean up the result into the standard shape (details below).
 5. Save it to disk as a Parquet file so the next call is free.
@@ -350,14 +354,14 @@ whole system, chosen first because everything downstream depends on it.
 
 **What "caching" means here.** The first call takes about 1.5 seconds and hits the
 network. It writes the result to `data/cache/yahoo_GC_F.parquet`. Every later call
-reads that file instead — 19 milliseconds, no network. This matters for more than
+reads that file instead: 19 milliseconds, no network. This matters for more than
 speed: if the code re-downloaded every run, a Yahoo outage or a silent data revision
 would mean today's backtest differs from yesterday's for reasons unrelated to any code
 change. Caching makes runs reproducible.
 
 **What Parquet is.** A binary columnar file format. Compared to CSV it is much smaller
-(the 5,152-row gold history is 180 KB), much faster to read, and — the reason it was
-chosen — it *preserves data types*. Save a CSV and every date becomes a string that
+(the 5,152-row gold history is 180 KB), much faster to read, and: the reason it was
+chosen: it *preserves data types*. Save a CSV and every date becomes a string that
 has to be re-parsed on load, with the parsing rules being another place bugs hide.
 Parquet round-trips a pandas DataFrame exactly. The `pyarrow` package provides the
 reader and writer.
@@ -366,7 +370,7 @@ reader and writer.
 
 **Problem 1: yfinance returns an awkward column structure.**
 
-Modern `yfinance` (1.6.0 here) returns columns as a two-level *MultiIndex* — a column
+Modern `yfinance` (1.6.0 here) returns columns as a two-level *MultiIndex*: a column
 index with two levels rather than one, so a column is identified by a pair like
 `('Close', 'GC=F')` rather than just `'Close'`. It does this even when you request a
 single ticker. If you don't flatten it, `df["close"]` raises an error everywhere
@@ -374,13 +378,13 @@ downstream.
 
 The fix takes the outer level and discards the ticker level. Notably, it selects that
 level **by name** (`"Price"`) rather than by position (`0`). Positional access would
-silently break if a future yfinance version reordered the levels — and "silently"
+silently break if a future yfinance version reordered the levels, and "silently"
 is the operative word: it would produce a valid-looking table of wrong data.
 
 **Problem 2: two nearly identical close columns.**
 
 Called with `auto_adjust=False`, yfinance returns both `Close` and `Adj Close`. For
-stocks these differ — `Adj Close` is adjusted for dividends and stock splits. Futures
+stocks these differ: `Adj Close` is adjusted for dividends and stock splits. Futures
 have neither, so here the two columns are identical. `adj_close` is dropped. Keeping
 both would leave every downstream piece of code an undocumented choice between two
 columns that look interchangeable but conceptually are not.
@@ -394,7 +398,7 @@ will later join Yahoo price data against FRED economic data, everything is force
 timezone-naive at the point of loading.
 
 As it happens, on this exact software stack yfinance already returns naive
-timestamps, so this never fires — but the normalisation stays in as insurance against
+timestamps, so this never fires, but the normalisation stays in as insurance against
 a version change.
 
 ### One deliberate departure from the original spec
@@ -437,7 +441,7 @@ normalized daily OHLCV" (+66 lines, −1 in `src/goldgraveyard/data/loaders.py`)
 
 ---
 
-## Entry 6 — 2026-08-20 — Data quality problem found in Yahoo's gold history
+## Entry 6: 2026-08-20: Data quality problem found in Yahoo's gold history
 
 While verifying `load_yahoo`, ran an integrity check on the data it returned. By
 definition, within a single trading day the closing price must fall between that day's
@@ -452,7 +456,7 @@ Yahoo's `GC=F` history violates this:
 | `open > high` | 2 |
 | `volume == 0` | 102 |
 
-Worst single case, 2008-09-17: reported high **808.00**, reported close **846.60** —
+Worst single case, 2008-09-17: reported high **808.00**, reported close **846.60**,
 the close is **$38.60 above the highest price the market supposedly reached that day.**
 
 The corruption is not spread evenly. It is concentrated at the beginning of the
@@ -466,9 +470,9 @@ sample:
 
 Every one of the eight signals is computed from the `close` column. A close outside
 the day's range means that bar is simply wrong. And the densest corruption sits in
-2006–2008 — exactly the years included to match CFTC data coverage.
+2006–2008: exactly the years included to match CFTC data coverage.
 
-### Decision required — currently open
+### Decision required: currently open
 
 Three options, and this changes a frozen parameter so it is not a judgment call to be
 made quietly:
@@ -476,7 +480,7 @@ made quietly:
 1. **Keep the full window and disclose it** in the final report as a known data
    limitation.
 2. **Move the start date to 2009**, where the corruption drops to a handful of days
-   per year — at the cost of losing the 2008 financial crisis, which is arguably the
+   per year: at the cost of losing the 2008 financial crisis, which is arguably the
    single most informative regime in the sample.
 3. **Add a validation gate** in the loader that detects and either flags or repairs
    impossible bars, and document the repair rule.
@@ -488,18 +492,18 @@ so the problem cannot silently reappear or worsen after a re-download.
 
 ---
 
-## Entry 7 — 2026-08-20 — Made the build log a standing rule
+## Entry 7: 2026-08-20: Made the build log a standing rule
 
 Created `CLAUDE.md` at the repo root.
 
 **What that file is.** Claude Code automatically reads a file named `CLAUDE.md`
 from the project root at the start of every session and treats its contents as
 standing instructions. It is the mechanism for making a convention stick without
-having to restate it each time. Nothing else reads it — it has no effect on the
+having to restate it each time. Nothing else reads it: it has no effect on the
 Python code.
 
 **Why it was needed.** Entries 1–6 were written retrospectively, in one batch, after
-a session summary used the phrase "we did `load_yahoo`" — which meant nothing to
+a session summary used the phrase "we did `load_yahoo`", which meant nothing to
 anyone who had not watched it being written. Writing the log after the fact is both
 worse (details are already lost) and unreliable (it only happens if someone
 remembers). The rule makes it part of doing the work instead.
@@ -507,12 +511,12 @@ remembers). The rule makes it part of doing the work instead.
 **What the file says**, in short:
 
 - Append to `BUILD_LOG.md` whenever anything is built, changed, decided, discovered,
-  or deliberately deferred — as part of the work, not at the end.
+  or deliberately deferred: as part of the work, not at the end.
 - Write for a reader who programs competently but knows nothing about this project
   or about futures markets. Define domain terms on first use. Do not explain
   programming fundamentals.
 - Never write "we did X" without saying what X is and why it exists.
-- Record reasoning rather than file diffs — git already stores diffs, and cannot
+- Record reasoning rather than file diffs: git already stores diffs, and cannot
   recover the reasoning.
 - Be explicit when something is unverified, or is Claude's draft rather than
   Miguel's decision.
@@ -526,13 +530,13 @@ goes in the trial ledger; tests are never weakened to make them pass.
 
 ---
 
-## Entry 8 — 2026-08-20 — Bug found in the `load_yahoo` cache check (open)
+## Entry 8: 2026-08-20: Bug found in the `load_yahoo` cache check (open)
 
 While explaining Entry 5's cache logic, a demonstration exposed a defect in the
 already-committed `load_yahoo`.
 
-**Background.** The cache file is named after the symbol only —
-`yahoo_GC_F.parquet` — and carries no record of which date range it holds. Entry 5
+**Background.** The cache file is named after the symbol only,
+`yahoo_GC_F.parquet`, and carries no record of which date range it holds. Entry 5
 described adding a "coverage check" so that a cache built for a narrow window is
 not silently reused for a wider request.
 
@@ -548,8 +552,8 @@ holding 2006-01-03 to 2020-12-30:
 
 | Case | Requested | Returned | Correct? |
 |---|---|---|---|
-| A — request starts before cached start | 2005 → 2026 | 2005 → 2026 | yes, refetched |
-| B — request starts after cached start | 2006-06 → **2026** | 2006-06 → **2020** | **no** |
+| A: request starts before cached start | 2005 → 2026 | 2005 → 2026 | yes, refetched |
+| B: request starts after cached start | 2006-06 → **2026** | 2006-06 → **2020** | **no** |
 
 Case B is exactly the failure the check was supposed to prevent: ask for data
 through 2026, silently receive data through 2020, with no error and no warning.
@@ -559,14 +563,14 @@ function with a single date range, so the cache was either absent or an exact
 match. The mismatch case was never exercised.
 
 **Why the obvious fix is wrong.** Adding `cached.index.max() >= want_end` does not
-work. The last row is the last *trading day* — 2026-06-29 — while the requested end
+work. The last row is the last *trading day*: 2026-06-29, while the requested end
 is typically a calendar date that may be a weekend, a holiday, or in the future.
 That condition would fail on essentially every call and the cache would never be
 used.
 
 The fix has to compare the *requested* window against the *previously requested*
-window, which means storing the request range alongside the data — in Parquet
-schema metadata, or in a small sidecar file — rather than inferring it from the
+window, which means storing the request range alongside the data: in Parquet
+schema metadata, or in a small sidecar file: rather than inferring it from the
 data itself.
 
 **Status: open, unfixed.** Left for Miguel. Also needs a regression test
@@ -574,7 +578,7 @@ reproducing Case B, or the bug can silently return.
 
 ---
 
-## Entry 9 — 2026-08-20 — Fixed the cache bug, and found a second one
+## Entry 9: 2026-08-20: Fixed the cache bug, and found a second one
 
 ### Fix 1: cache coverage (closes Entry 8)
 
@@ -595,13 +599,13 @@ Two consequences worth naming:
 
 - **A cache file with no metadata is treated as unusable and refetched.** Files
   written by the previous version have no coverage record, and a cache whose
-  coverage cannot be established must not be trusted — trusting it is the bug.
+  coverage cannot be established must not be trusted: trusting it is the bug.
 - **A partial hit refetches the UNION of the cached and requested windows**, so
   the cache only ever grows. Fetching just the newly requested window would let
   two callers with overlapping ranges evict each other's data on every call.
 
 The docstring was also rewritten. The old one claimed the cache "is only reused
-when it actually spans the requested window", which the code did not do — an
+when it actually spans the requested window", which the code did not do: an
 assertion of a guarantee that does not exist is worse than no comment, because it
 stops the next reader from checking.
 
@@ -620,21 +624,21 @@ yf.download("GC=F", start="2020-12-01", end="2021-01-01") -> last row 2020-12-31
 
 2020-12-31 was a Thursday and a normal trading day. It was simply being dropped.
 
-This project's API documents its range as `[start, end]` — inclusive at both ends —
+This project's API documents its range as `[start, end]`: inclusive at both ends,
 and `DECISIONS.md` names 2026-06-30 as the sample end. 2026-06-30 is a Tuesday and
 a trading day, and it was missing from every load. The fix passes `end + 1 day` to
 yfinance, and the docstring now states the inclusive convention explicitly.
 
 **Impact:** the gold sample went from 5,152 rows ending 2026-06-29 to 5,153 rows
 ending 2026-06-30. One row. But it was the *last* row, and it was missing silently
-— which is the same failure shape as the cache bug: a plausible-looking result
+which is the same failure shape as the cache bug: a plausible-looking result
 computed on not-quite-the-declared-sample.
 
-### Tests added — `tests/test_loaders.py`, 9 tests, all passing
+### Tests added: `tests/test_loaders.py`, 9 tests, all passing
 
 These do not touch the network. `yf.download` is monkeypatched with a fake that
-serves synthetic prices in yfinance's real shape — a `(Price, Ticker)` column
-MultiIndex — and, importantly, **reproduces the exclusive-end behaviour**. A test
+serves synthetic prices in yfinance's real shape: a `(Price, Ticker)` column
+MultiIndex, and, importantly, **reproduces the exclusive-end behaviour**. A test
 double that is more convenient than the real thing lets the suite pass while
 production breaks.
 
@@ -661,16 +665,700 @@ nine tests were written by Claude.
 
 ---
 
+## Entry 10: 2026-08-20: Volatility targeting (`engine/sizing.py`)
+
+Second and third functions implemented. Written by Claude from a spec Miguel wrote.
+
+### What volatility targeting is, and why the project needs it
+
+**Volatility** here means the standard deviation of daily returns, annualised by
+multiplying by sqrt(252): 252 being the approximate number of trading days in a
+year. It is the standard measure of how much an asset moves around, and therefore
+of how much risk a position in it carries.
+
+The problem it solves: suppose signal A returns 12% a year and signal B returns 6%.
+A looks twice as good. But if A was swinging around at 30% volatility and B at 5%,
+then B earned more return per unit of risk, and anyone could have turned B into a
+20%-return strategy just by trading it six times larger. Comparing raw returns
+compares bet *sizes*, not predictive *skill*.
+
+The fix is to scale every signal's position up or down so that all eight run at the
+same risk level: 10% annual volatility, frozen in DECISIONS.md. After that, return
+differences reflect skill only.
+
+### The input: daily returns
+
+Everything below operates on returns, not prices.
+
+```python
+returns = df["close"].pct_change()
+```
+
+A return is the percentage change from one closing price to the next, expressed as a
+fraction: `0.01` means +1%. On 2020-03-13 gold closed at 1515.7 against the previous
+close of 1589.3:
+
+```
+(1515.7 - 1589.3) / 1589.3 = -0.04631   ->   -4.63%
+```
+
+The first value is `NaN`, since there is no previous day to compare against.
+
+**These are simple returns, not log returns**, and that choice is frozen in
+`DECISIONS.md`. Log returns are tempting because they add up cleanly across time, but
+they do not combine correctly across *positions*, and every number downstream is
+`position × return`. Simple returns keep that multiplication correct. Mixing the two
+conventions in one codebase silently corrupts every result, which is why the choice is
+frozen rather than left to whoever writes the next function.
+
+### `realized_vol(returns, lookback=60)`
+
+```python
+returns.rolling(60).std().shift(1) * np.sqrt(252)
+```
+
+Trailing 60-day standard deviation of returns, annualised, **then shifted forward
+one day**. Three steps, with the real values for 2020-03-12:
+
+| Step | What it does | Result |
+|---|---|---|
+| `.rolling(60).std()` | spread of the last 60 daily returns | `0.011138` per day |
+| `* np.sqrt(252)` | converts a daily figure to a yearly one | `0.1768` per year |
+| `.shift(1)` | makes day *t* use data only through *t−1* | n/a |
+
+**On the √252.** Variance grows roughly linearly with time, so standard deviation
+grows with the *square root* of time. There are about 252 trading days in a year, so
+converting daily to annual means multiplying by √252. This step changes no decision,
+the position sizing would be identical without it, since the target is expressed in the
+same units. It exists so the number is comparable to how volatility is quoted
+everywhere else.
+
+**On the `.shift(1)`.** That shift is the entire correctness content of the function. A plain rolling
+standard deviation computed at day *t* includes day *t*'s own return. But this
+number is used to size a position that was decided at the close of day *t*: so
+including *t* means the position size was chosen using knowledge of how *t* turned
+out. That is lookahead: information from the future leaking into a decision made in
+the past. Shifting by one day makes the estimate at *t* depend only on returns
+through *t-1*.
+
+This is subtle in a way worth naming: the lookahead is not in the signal. The
+signal could be perfectly honest and this would still inflate results, because a
+strategy that quietly bets bigger on days it knows will be calm looks skilful.
+
+### `vol_target(raw_position, returns, target=0.10, max_leverage=3.0)`
+
+```python
+scale  = target / realized_vol(returns).clip(lower=VOL_FLOOR)
+result = (raw_position * scale).clip(-max_leverage, max_leverage)
+```
+
+The core of it is one division: the target risk divided by the measured risk. Worked
+both ways using real measurements from the sample:
+
+| Conditions | measured vol | division | position |
+|---|---|---|---|
+| Feb 2019, calm | 7.8% | `0.10 / 0.078` | **1.29 units** |
+| Dec 2008, crisis | 45.7% | `0.10 / 0.457` | **0.22 units** |
+
+Calm markets require *more* than a full unit to reach 10% risk; a crisis requires
+barely a fifth of one. Frozen parameters: `TARGET_ANNUAL_VOL = 0.10`,
+`VOL_FLOOR = 0.04`, `MAX_LEVERAGE = 3.0`.
+
+Two guards:
+
+- **`VOL_FLOOR` (4% annualised) bounds the vol ESTIMATE, not the output.** During an
+  unusually quiet stretch the estimate collapses toward zero, and `target/estimate`
+  explodes: the position would become enormous precisely *because* nothing had
+  moved recently, which is exactly when a shock is most damaging. Flooring the
+  denominator stops that before the leverage cap has to.
+- **`max_leverage` (3.0x)** is the final backstop on position size.
+
+No `dropna` and no forward-fill. The first 60 values are NaN because no estimate
+exists yet, and that absence is information the engine needs; filling it would
+invent position sizes for days that had no volatility estimate.
+
+### Verification
+
+Miguel's check, on synthetic returns at ~15.5% volatility:
+
+```
+strategy vol : 0.1019     (target 0.10)
+```
+
+Near the target but not on it, which is the correct outcome. A causal estimate
+always lags a changing volatility regime, so it should miss slightly. Landing on
+0.1000 exactly would be evidence of lookahead, not of quality.
+
+**An additional test was run, because "near 0.10" is weak evidence**: a subtly
+leaky implementation would also produce a plausible number. The probe perturbs a
+single day's return and asks which volatility estimates change:
+
+```
+estimate at t=500 changed by : 0.0     (day 500's return does not affect day 500's estimate)
+first index that changed     : 501     (influence begins strictly afterwards)
+```
+
+That tests the causality property directly, independent of whether the headline
+number looks reasonable.
+
+### First live end-to-end run
+
+`load_yahoo` was run against Yahoo with the cache deleted, and its output fed
+straight into `vol_target`:
+
+```
+df.shape   : (5153, 5)
+df.columns : ['open', 'high', 'low', 'close', 'volume']
+index      : 2006-01-03 -> 2026-06-30
+
+gold's own annual volatility     : 0.1857
+always-long, vol-targeted        : 0.1069     (target 0.10)
+leverage range                   : 0.22 to 1.29;  0 days at the 3.0 cap
+```
+
+Real data flows through real code and produces a sensible number. This is the first
+time anything in the repo has done that.
+
+Note that the very first row of the sample, 2006-01-03, has a close of 530.70
+against a high of 528.50: the Entry 6 data corruption, in row one. Still
+undecided.
+
+---
+
+## Entry 11: 2026-08-20: Added `CONCEPTS.md`
+
+Created a second document alongside the build log, and a `CLAUDE.md` rule to keep
+it fed.
+
+**Why two documents.** They answer different questions. `BUILD_LOG.md` is a diary,
+what was done, on which day, and why that choice was made over the alternatives. It
+is ordered by time and most of it goes stale as reference material. `CONCEPTS.md` is
+a reference: what volatility targeting *is*, what lookahead *is*, which has no
+particular date attached and stays useful indefinitely.
+
+Mixing them makes both worse: you cannot skim a diary to look something up, and a
+reference cluttered with "on the 20th we decided X" is hard to read.
+
+**What triggered it.** The volatility-targeting explanation took several attempts
+before it landed, and what finally worked was not the definition: it was a table of
+real numbers from the project's own data, showing gold's calmest day next to its
+wildest:
+
+| | gold's daily move | position | resulting risk |
+|---|---|---|---|
+| Feb 2019 (calm) | 0.42% | 1.29 units | 0.54% |
+| Dec 2008 (wild) | 2.22% | 0.22 units | 0.49% |
+
+That explanation existed only in the conversation, which is not somewhere it can be
+found again. Hence the file.
+
+**Initial contents:** what the project is doing and why a null result counts as
+success; volatility; volatility targeting in full, with the table above; the
+distinction between position size and lot size; lookahead and the `.shift(1)`,
+including how to detect it; and why price data is cached (reproducibility, not
+speed).
+
+**The `CLAUDE.md` rule added:** when a concept is explained and confirmed
+understood, write it into `CONCEPTS.md` using the explanation that actually worked,
+including the concrete numbers, if numbers are what made it click, rather than a
+tidied-up abstract version.
+
+---
+
+## Entry 12: 2026-08-20: `CONCEPTS.md` rewritten at a more basic level
+
+The first version of `CONCEPTS.md` (Entry 11) was written plainly but still assumed
+the reader knew what "long", "position", and "return" meant. Miguel's actual
+questions were more basic than that: *"so vol_target is just the size of the lot?"*,
+*"why are we estimating the volatility for the future?"*, and the file has been
+rewritten to match that register. It went from 171 to 518 lines.
+
+**Structural changes:**
+
+- **Part 0, a vocabulary section.** Eight terms defined before anything else: return,
+  position, long/short/flat, position size, signal, backtest, volatility, futures
+  contract. Nothing later in the file uses a word that has not been defined.
+- **Part 3 restructured as the questions actually asked**, rather than as a topic
+  outline: what problem is this solving, what is the fix, why does the project need
+  it, which function does what, why does the difference matter, is this just the lot
+  size.
+- **Part 3.5, worked examples**, added on request. Three, smallest first: the single
+  multiplication `your return = position × asset return` across five position values;
+  the sizing division done by hand for the calm and wild cases; and six real days from
+  the March 2020 COVID crash straight out of the code, next to what a fixed 1-unit
+  position would have done (worst day −2.84% vs −4.63%).
+- **Parts 3.4 and 3.45**, added in response to two further questions.
+
+### The substantive new content: why forecasting volatility is legitimate
+
+Miguel asked why the project forecasts future volatility when its whole thesis is
+that forecasting is mostly impossible. That is a sharp question and it deserved
+measured evidence rather than assertion. Computed on this project's own gold data:
+
+```python
+returns.autocorr(1)                     # -0.0096   direction:  unpredictable
+returns.abs().autocorr(1)               # +0.1132   magnitude:  predictable
+past_60d_vol.corr(next_60d_vol)         # +0.5614   persistence of volatility
+```
+
+`autocorr(1)` correlates the series with itself shifted by one day: "does today tell
+you anything about tomorrow?" Applied to returns it answers *direction*; applied to
+`abs(returns)` it answers *size of move*, ignoring sign. The third line rolls a
+60-day standard deviation forward and backward from each date and correlates the two,
+asking directly whether the window `realized_vol` uses predicts the window it is used
+over.
+
+**Direction is unpredictable; magnitude is not.** Volatility clusters: violent days
+follow violent days. This is the phenomenon the ARCH/GARCH literature describes
+(Engle, Nobel 2003), and the 60-day rolling standard deviation used here is its
+crudest usable form.
+
+The connection worth keeping: **the +0.56 is why position sizing works, and the −0.01
+is why most of the eight signals are expected to die.** Sizing leans on the one part
+of the data that carries a forecastable pattern; the signals are all trying to predict
+the part that does not.
+
+This is now recorded in `CONCEPTS.md` Part 3.45.
+
+### Honesty note kept in the file
+
+The March 2020 example is explicit that volatility targeting **still lost money**. The
+position only fell from 0.627 to 0.566 across the crash week, because it was reacting
+to a 60-day window that mostly still looked calm. It reduces the loss; it does not
+prevent it, and it never anticipates. That lag is the honest behaviour, not a defect,
+removing it would require knowing the day being sized.
+
+### `CLAUDE.md` updated
+
+The concept-note guidelines now require: assume no finance background at all; always
+include worked examples using real numbers from this project's data rather than
+invented ones; show the arithmetic; and state a concept's limits in the same breath as
+its benefits, so examples do not oversell.
+
+---
+
+## Entry 13: 2026-08-20: Calculations moved out of the appendix and into the entries
+
+Entry 12's appendix ("Appendix A: Calculations reference") has been removed and its
+content woven into the entries that built each calculation.
+
+**Why.** The appendix collected eleven formulas in one lookup-friendly place, but
+collecting them stripped out the reasoning. `returns.rolling(60).std() * sqrt(252)` in
+a reference table is a fact to memorise; the same line inside Entry 10, next to the
+explanation of why volatility has to be measured at all and what breaks if the shift is
+missing, is something you can reconstruct from understanding. The appendix optimised
+for looking a formula up, which is the thing you least need when you are trying to
+learn it.
+
+**What moved where:**
+
+- **Daily returns**: into Entry 10, as the input everything else operates on,
+  including the worked arithmetic on 2020-03-13 and why the project uses simple rather
+  than log returns.
+- **`realized_vol`**: the three steps are now a table inside Entry 10 with the real
+  intermediate values (`0.011138` per day → `0.1768` per year), plus an explicit note
+  that the √252 is cosmetic and changes no decision.
+- **`vol_target`**: the division is now shown worked both ways in Entry 10, calm
+  versus crisis, with the frozen parameters named alongside.
+- **The clustering diagnostics**: into Entry 12, with an explanation of what
+  `autocorr(1)` actually does, since the numbers mean nothing without it.
+- **The unwritten calculations** (strategy return, turnover, costs, Sharpe, maximum
+  drawdown, Newey–West, Deflated Sharpe): removed entirely. Each will be explained in
+  the entry that implements it, which is when the explanation can be tied to working
+  code rather than to a plan.
+
+**`CLAUDE.md` updated** to require this pattern, and to require that the arithmetic in
+every worked example be checked before it is written: after one was shipped in Entry
+10 that used the same day's position instead of the previous day's, which is precisely
+the bug the surrounding paragraph was explaining.
+
+---
+
+## Entry 14, 2026-08-21, CONCEPTS.md rewritten at course register and completed
+
+Two rounds of feedback drove this: the file was pitched too low, and it was incomplete.
+
+### Register
+
+The previous version had drifted into simplified vocabulary, using phrases like "how
+much it bounces around" in place of "the standard deviation of returns". That is the
+wrong trade. Miguel has the mathematical background; what he lacks is the domain
+vocabulary, and substituting plain words for the standard terms actively hinders him,
+since the standard terms are how he finds the literature later.
+
+Rewritten at the register of a university course: build from the ground up, define
+every term properly on first use, order the material so that each definition uses only
+terms already introduced, and never avoid a term because it sounds technical.
+
+Terms now introduced and defined rather than paraphrased: notional exposure, leverage,
+excess return, simple versus logarithmic returns and why the choice matters,
+heteroskedasticity, ex ante versus ex post, the square root of time rule, Bessel's
+correction, autocorrelation, volatility clustering, stylized facts, ARCH and GARCH,
+measurability with respect to an information set, basis point, HAC standard errors,
+extreme order statistics.
+
+### Completeness
+
+Several quantities were referenced throughout the file and never defined. Two new parts
+close that gap.
+
+**Part 11, measuring performance.** The basis point; turnover and why it is defined on
+position changes rather than trade counts; the transaction cost formula including why
+the round trip quote is halved; the Sharpe ratio, including why no risk free rate is
+subtracted for futures and a rough reference scale for interpreting the number; maximum
+drawdown and why it is reported alongside Sharpe rather than in place of it.
+
+**Part 12, the statistical gauntlet.** In sample versus out of sample and why a
+development set is optimistically biased; walk forward analysis and which of the eight
+signals actually needs it; why the conventional t statistic is inflated under positive
+autocorrelation and what Newey West does about it; multiple testing framed as the
+expectation of an extreme order statistic; regime stability and why the breakpoints
+must be chosen before results are seen; and the verdict rule itself.
+
+The Deflated Sharpe Ratio is described conceptually in two stages but its formulas are
+still deliberately absent, consistent with the decision in Entry 3. The kurtosis
+convention trap is flagged and left unresolved.
+
+### Style constraint
+
+**No em dashes**, anywhere: prose, documentation, commit messages, chat. Forty three
+were removed from `CONCEPTS.md`, replaced with a colon where the following clause
+explains the preceding one, a comma where it qualifies, or a full stop where it is a
+separate thought. `CLAUDE.md` now records the constraint, along with the register
+guidance above.
+
+The file went from 171 lines at Entry 11 to 899.
+
+---
+
+## Entry 15, 2026-08-21, First end to end backtest. The machine produces a number.
+
+Five components implemented, wired together, and run against live data. This is the
+first time the project has produced a performance figure of any kind.
+
+**Headline result, `ma_cross` on gold, 2006 to 2026:**
+
+```
+IS Sharpe 0.311    OOS Sharpe 0.523    turnover 4.05    OOS at 4bp 0.518
+```
+
+### The components
+
+**`signals/ma_cross.py`.** Long when the 50 day simple moving average exceeds the 200
+day, short otherwise.
+
+```python
+fast = close.rolling(50).mean()
+slow = close.rolling(200).mean()
+position = (fast > slow).astype(float) * 2 - 1
+return position.where(fast.notna() & slow.notna())
+```
+
+The `.where(...)` is the part worth explaining. The first 199 rows have no 200 day
+average, so no signal exists. Filling those with a position would have the strategy
+trading before its own rule is defined, and because a fill value is constant it would
+register as a deliberate directional bet held for most of a year. Leaving them NaN
+means no position, no trade, no P&L, which is the honest representation of "the signal
+does not exist yet".
+
+**`engine/costs.py`.** Cost is charged on position change, not on trade count:
+
+```python
+cost = positions.fillna(0.0).diff().abs() * cost_bps / 2 / 10_000
+net  = gross_returns - cost
+```
+
+Three details. The `/10_000` converts basis points to a fraction. The `/2` is because
+`cost_bps` is quoted round trip, meaning in and back out, while a single day position
+change of 1.0 is one way. The `fillna(0.0)` before differencing charges the initial
+entry: on the first day the signal exists the position moves from nothing to something,
+which is a real trade, and differencing the raw series would produce NaN there and hand
+the strategy a free entry.
+
+The `positions` passed in must be the volatility sized position, not the raw plus or
+minus one. Cost is paid on the quantity actually traded.
+
+Turnover, annualized, on the same quantity:
+
+```python
+turnover = positions.fillna(0.0).diff().abs().mean() * 252
+```
+
+**`engine/metrics.py`.** Sharpe ratio only, for now:
+
+```python
+sharpe = returns.dropna().mean() / returns.dropna().std() * np.sqrt(252)
+```
+
+No risk free rate is subtracted, since futures positions are already financed and the
+return series is therefore already an excess return.
+
+**`engine/backtest.py`.** The pipeline, and the causality argument that justifies it:
+
+```python
+ret    = panel["close"].pct_change()
+raw    = signal(panel)              # desired position at close of t
+lagged = raw.shift(EXEC_LAG_BARS)   # held over t+1
+sized  = vol_target(lagged, ret, target=target_vol)
+gross  = sized * ret
+net    = apply_costs(gross, sized, cost_bps)
+```
+
+The claim to verify is that `gross_t = sized_t * ret_t` uses nothing from day `t` on
+the position side:
+
+- `sized_t` takes its direction from `lagged_t`, which is `raw_{t-1}`. Decided at the
+  close of t-1.
+- `sized_t` takes its scale from the volatility estimate at t, and `realized_vol`
+  carries its own internal `.shift(1)`, so that estimate spans data through t-1 only.
+- `ret_t` is the move over day t.
+
+Every day's P&L therefore uses only information available at the close of t-1 to earn
+day t's return. **The two shifts are independent and both are required.** Removing the
+explicit one leaks the direction; removing the one inside `realized_vol` leaks the
+sizing. Neither failure would raise an error.
+
+`split_is_oos` takes a positional split on the dropna'd series, first 60 percent in
+sample, remainder out of sample, so the two halves hold comparable numbers of live
+observations rather than comparable spans of calendar time.
+
+### A defect found at runtime: the registry was empty
+
+`REGISTRY["ma_cross"]` raised `KeyError` on the first run. Each signal module calls
+`@register` at import time, but nothing imported the modules, so no decorator ever
+executed and the registry stayed empty. The eight signals existed as files and did not
+exist as far as the program was concerned.
+
+Fixed with an explicit `_load_all()` at the bottom of `signals/__init__.py`, listing
+the eight modules by name. **Explicit imports rather than a directory scan**, because
+the Deflated Sharpe correction requires an honest count of how many signals were tested,
+and auto discovery would let that count drift as files were added or removed without
+anyone noticing.
+
+### Verification, which matters more than the headline numbers
+
+**The adversarial test, run on real gold rather than synthetic data.** Feed the engine a
+signal that already knows the current day's return:
+
+```
+through the engine, lag applied  : Sharpe  -0.256
+same signal, lag removed         : Sharpe +16.509
+```
+
+The engine extracts nothing from perfect foresight, which is the correct behaviour.
+The second figure is the value of the protection: one removed `.shift()` converts a
+worthless rule into a Sharpe of 16.5. Worth remembering as a reference point for what a
+leak looks like in this dataset.
+
+**Other checks:**
+
+| Check | Result | Expected |
+|---|---|---|
+| Realized volatility of the strategy | 0.1064 | near the 0.10 target, missing slightly |
+| First traded day | 2006-10-18 | 200 day window plus one bar of lag |
+| Position range | -1.28 to 1.29 | below the 3.0 cap throughout |
+| Days at the leverage cap | 0 | none expected at gold's volatility |
+| Direction flips | 28 in 4,953 days | consistent with turnover 4.05 |
+| Cost drag, out of sample | 0.527 gross to 0.523 net | negligible at 28 trades |
+
+**Test suite: 14 passing, 6 failing.** All four engine invariant tests went green,
+including `test_execution_lag_kills_same_bar_foresight`. The six remaining failures are
+the roll adjustment and statistics stubs, still unimplemented by design.
+
+### How not to read this result
+
+The out of sample Sharpe of 0.523 is **not** evidence that trend following works on
+gold. It is one signal, it has not been through the multiple testing correction, its
+standard error has not been computed with autocorrelation in mind, and it has not been
+checked for regime stability. Out of sample exceeding in sample is more readily
+explained by sample variation than by anything real.
+
+What this run establishes is narrower and more important at this stage: **the machine
+runs, and it does not lie.** The verdict on the signal comes after Part 12 of
+`CONCEPTS.md` is implemented.
+
+---
+
+## Entry 16, 2026-08-21, Pipeline overview added to CONCEPTS.md
+
+A gap in the documentation, noticed when Miguel summarised the architecture back
+correctly and neither document contained that summary. The pipeline was described
+piecemeal, in the `run_backtest` docstring and across Entry 15, but nowhere as a single
+path from idea to number.
+
+Added as `CONCEPTS.md` sections 3.4 and 3.5, placed early so a reader gets the map
+before the components, with forward references to the parts that define each term.
+
+**Five stations produce a measurement:** signal, then lag and size, then costs, then
+metrics, then the in sample and out of sample split. The six line code path is included
+so the mapping from concept to implementation is explicit.
+
+**Order within station 2 is called out separately.** Lag first, then size. Reversing
+them allows the sizing layer to condition on a day the direction has not yet seen,
+which introduces lookahead through ordering alone, without any single component being
+individually wrong. That is a failure mode worth naming because it is invisible in a
+review of the parts.
+
+**Three further stations turn a measurement into a claim:** HAC standard errors,
+the multiple testing correction, and regime stability. None are implemented.
+
+The distinction this section is really recording: **the split produces an unbiased
+measurement, not a verdict.** It removes the optimism introduced by developing against
+the data. It says nothing about whether the number is distinguishable from zero. The
+section states explicitly that `ma_cross`'s out of sample Sharpe of 0.523 has no verdict
+attached to it yet, so the figure is not mistaken for a result on a later reading.
+
+---
+
+## Entry 17, 2026-08-21, Backtesting itself documented as a concept
+
+`CONCEPTS.md` described this project's specific pipeline but never explained what a
+backtest *is*, or what distinguishes a sound one from a misleading one. The term was
+defined in a single line and otherwise assumed. Added as a new Part 4, placed after the
+project overview and before the volatility material, with the subsequent parts
+renumbered from 5 to 13.
+
+**Contents of the new part:**
+
+- **What a backtest is.** A simulation that replays historical data through a rule and
+  computes the return series it would have produced. Stated precisely as a measurement
+  of a counterfactual, under assumptions, and explicitly not a prediction.
+- **The mechanism.** The four step loop of observe, decide, execute, account, and the
+  equity curve as the cumulative product of the resulting return series. Noted that it
+  compounds rather than sums, so a 10 percent gain followed by a 10 percent loss leaves
+  0.99 rather than 1.00.
+- **Event driven versus vectorized architectures**, and why this project is vectorized:
+  the whole pipeline fits in six lines, so the causality argument can be verified by
+  reading rather than by tracing mutable state. The tradeoff is recorded honestly, since
+  a vectorized backtest cannot express path dependent logic such as stop losses. None of
+  the eight signals need it.
+- **The assumptions a daily bar backtest embeds**, as a table with each assumption, how
+  reality differs, and whether the difference is material here. The general principle
+  stated: an assumption is acceptable when its violation is small relative to the effect
+  being measured. A strategy earning 20 basis points a trade tolerates imprecision about
+  a 2 basis point cost; one earning 3 basis points does not.
+- **Six requirements for an honest backtest**, five being the section 3.2 failure modes
+  restated as positive obligations, the sixth being correct instrument construction.
+- **The futures roll problem**, in full. This was previously described only in
+  `data/roll.py` and in passing, despite being the failure mode most specific to this
+  asset class.
+- **What a backtest still cannot tell you**, even when correct.
+
+### The roll section in particular
+
+Worth recording why it earned several hundred words. At each contract roll the expiring
+and replacement contracts trade at different prices, the difference reflecting cost of
+carry. Concatenating raw prices turns that difference into an apparent one day return
+that no position captured. Because gold is normally in contango, the deferred contract
+being more expensive, these phantom gaps are **systematically negative** and recur
+several times a year across the entire sample.
+
+The result is a persistent artificial downward drift that does not look like a bug. It
+looks like a market phenomenon, it makes every long biased signal look worse and every
+short biased signal look better, and it is invisible on a twenty year price chart. That
+combination is why `data/roll.py` specifies the check as a test rather than an
+inspection.
+
+Ratio adjustment is the method chosen, since everything downstream operates on
+percentage returns. Difference adjustment, the Panama method, preserves dollar spreads
+but can drive early history negative over a long sample. The two must never be mixed
+within one series.
+
+---
+
+## Entry 18, 2026-08-21, Newey-West standard errors, and a wrong prediction corrected
+
+`stats/hac.py` implemented. Two functions.
+
+### `auto_bandwidth(n)`
+
+```python
+int(np.floor(4 * (n / 100) ** (2 / 9)))
+```
+
+Chooses how many lags of autocorrelation to correct for. It grows with sample size but
+slowly: the exponent 2/9 means quadrupling the sample raises the bandwidth by about a
+third. On the 1,982 out of sample observations it returns 7. The tradeoff is that too
+few lags leaves autocorrelation uncorrected, while too many add noise, since each extra
+autocovariance is itself estimated from the same finite sample.
+
+### `newey_west_tstat(returns, lags=None)`
+
+```python
+model = sm.OLS(r.values, np.ones(len(r))).fit(cov_type="HAC", cov_kwds={"maxlags": lags})
+return float(model.tvalues[0]), float(model.bse[0]), lags
+```
+
+**The trick, which is worth understanding rather than copying.** Regressing a series on
+nothing but a column of ones makes the fitted coefficient the sample mean, and its
+t-statistic tests exactly the hypothesis of interest: is the mean return zero. So the
+question becomes a regression, and regression machinery then allows a HAC covariance
+estimator to be substituted with one argument.
+
+**`cov_type="HAC"` is the whole function.** Omitting it returns the ordinary standard
+error computed under an independence assumption. It raises no error and reports an
+inflated t-statistic, which is precisely the failure this function exists to prevent.
+
+### The result on `ma_cross`
+
+```
+                 IS          OOS
+n              2971         1982      (11.8 and 7.9 years)
+Sharpe       +0.311       +0.523
+naive t      +1.067       +1.466
+HAC t        +1.068       +1.472      lags 8 and 7
+```
+
+**Neither clears the conventional |t| > 2 threshold.** Nearly eight years of untouched
+out of sample data, and the signal cannot be distinguished from zero before any
+correction for multiple testing has been applied.
+
+### A prediction that was wrong, and why it matters
+
+The expectation going in was that the HAC t-statistic would be **smaller** than the
+naive one, on the reasoning that a trend signal holds one position for months, so
+consecutive daily returns express a single bet and are positively autocorrelated.
+
+The measured result is that the two are equal to three decimal places, with the HAC
+standard error 0.996 times the naive one. The autocorrelation of the strategy's out of
+sample return series:
+
+```
+lag  1: -0.0037
+lag  5: +0.0043
+lag 20: -0.0211
+```
+
+**The first half of the reasoning is true and the second does not follow.** The daily
+return is `w_{t-1} * r_t`. Where `w` is roughly constant across a stretch, that stretch
+of strategy returns is gold's returns scaled by a constant, and gold's daily returns are
+close to serially uncorrelated, measured at -0.0096 in Entry 12. Scaling an uncorrelated
+series by a constant leaves it uncorrelated.
+
+**A persistent position does not imply a persistent return.** These are different
+statements about different series, and conflating them is easy.
+
+The implementation is correct: `test_hac_widens_se_under_positive_autocorrelation`
+constructs an AR(1) series and confirms HAC does shrink the t-statistic there.
+
+**Where HAC will actually matter in this project:** signals whose returns genuinely
+overlap, or whose positions track an autocorrelated quantity. Twelve month momentum is
+the obvious candidate, and the real yield deviation signal is another, since a rolling
+regression residual is autocorrelated by construction. For a slow binary trend signal on
+daily bars, HAC and naive agreeing is itself the finding.
+
+---
+
 ## Current state at a glance
 
 | | |
 |---|---|
 | Commits | 4 (through `04feaf3`) |
-| Uncommitted | `loaders.py` fixes, `tests/test_loaders.py`, this log entry |
-| Functions implemented | 1 of 41 (plus 2 cache helpers) |
-| Tests | 10 passing, 10 failing (the 10 failures are by design) |
+| Uncommitted | `sizing.py`, `costs.py`, `metrics.py`, `backtest.py`, `ma_cross.py`, `signals/__init__.py`, `run_gauntlet.py`, `CONCEPTS.md`, `CLAUDE.md`, log entries 10-18 |
+| Functions implemented | 11 of 41 (plus helpers) |
+| Tests | 16 passing, 4 failing (the 4 failures are by design) |
 | Linter | clean |
-| Real results produced | none |
+| Real results produced | `ma_cross`: OOS Sharpe 0.523, HAC t 1.47, not significant |
 
 ### Open items
 
@@ -682,15 +1370,22 @@ nine tests were written by Claude.
 
 ### Next piece of work
 
-Continuing the vertical slice: the remaining loaders (`load_fred`, `load_cot`,
+`engine/costs.py`, then `engine/backtest.py`, which is where the first Sharpe ratio
+gets produced. The calculations still unwritten, each of which gets explained in the
+entry that builds it: strategy return (position × return, with the mandatory one-bar
+execution lag), turnover, transaction costs, Sharpe, maximum drawdown, the Newey–West
+t-statistic, and the Deflated Sharpe. `sizing.py` has no dedicated tests yet; the checks above were run
+ad hoc and should become permanent tests, particularly the lookahead probe.
+
+After that, the remaining loaders (`load_fred`, `load_cot`,
 `load_all`), then futures roll adjustment.
 
 Before roll adjustment gets written, the underlying concept needs to be understood
-properly — it is the single largest correctness risk in the project. In outline: a
+properly: it is the single largest correctness risk in the project. In outline: a
 continuous futures price series is many expiring contracts glued together, and at each
 join the old and new contracts trade at genuinely different prices. Glue the raw
 prices together and that gap appears in the data as a price move that no trader could
 ever have captured. Gold contracts further out in time are normally *more* expensive,
-so these fake gaps are systematically negative — producing a persistent, entirely
+so these fake gaps are systematically negative: producing a persistent, entirely
 artificial downward drift that looks exactly like a real market phenomenon. This
 lecture has not happened yet.

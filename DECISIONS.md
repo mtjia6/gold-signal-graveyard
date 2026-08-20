@@ -5,7 +5,7 @@
 The value of this project rests entirely on the claim that nothing here was chosen
 after seeing performance. That claim is only credible if the choices are timestamped
 in git history *before* the results are. If you change something below, do not edit
-the line — add a dated amendment at the bottom saying what changed and why, and
+the line: add a dated amendment at the bottom saying what changed and why, and
 accept that an amendment made after seeing results invalidates the finding.
 
 ---
@@ -68,7 +68,7 @@ accept that an amendment made after seeing results invalidates the finding.
 No appeals. A signal that misses by a hair is dead; that is what a pre-registered
 threshold means.
 
-## 6. Trial ledger — the honesty tax
+## 6. Trial ledger: the honesty tax
 
 The Deflated Sharpe needs the number of trials you *actually ran*, not the eight in
 the headline table. Every variant tested at any point, including ones abandoned
@@ -82,4 +82,4 @@ whole project without noticing you did it.
 
 ## 7. Amendments
 
-*(none yet — append dated entries below, never edit above)*
+*(none yet: append dated entries below, never edit above)*
