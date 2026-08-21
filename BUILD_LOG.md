@@ -1560,16 +1560,95 @@ first condition failed.
 
 ---
 
+## Entry 21, 2026-08-21, Regime stability, and a weakness found in condition 3
+
+`stats/regimes.py` implemented: `by_regime`, `count_positive_regimes`, `sign_stability`.
+This is condition 3 of the frozen verdict rule.
+
+The five windows come from the hardcoded `REGIMES` constant, which mirrors
+`DECISIONS.md` section 4 and is never inferred from data. Choosing breakpoints after
+seeing where a strategy performed well is a slower form of overfitting, and hardcoding
+them makes it impossible rather than merely discouraged.
+
+`by_regime` returns n, mean, annualized mean, Sharpe, sign, and a `thin` flag below 60
+observations. **The count is reported deliberately.** The COVID window is a single
+calendar year at 253 observations against 1,380 for the modern regime, and reading a
+thin regime's mean as equally informative is the obvious way to misuse the table.
+
+### Result for `ma_cross`
+
+```
+regime          n     mean/day   annualized   Sharpe   positive
+bull_run     1229   +0.000513      +0.1292    +1.220     yes
+bear_2013    1088   -0.000141      -0.0356    -0.340     no
+range_recov  1003   +0.000021      +0.0053    +0.051     yes
+covid_spike   253   +0.000565      +0.1423    +1.165     yes
+modern       1380   +0.000139      +0.0350    +0.325     yes
+
+positive regimes: 4 of 5      condition 3: PASS
+```
+
+The signal passes condition 3 and remains DEAD on condition 2, Deflated Sharpe 0.5026.
+
+### Weakness 1: condition 3 mostly measures gold, not the signal
+
+Running gold's own returns through the same five windows produces an **identical sign
+pattern**:
+
+| regime | `ma_cross` | gold itself |
+|---|---|---|
+| bull_run | positive | positive |
+| bear_2013 | negative | negative |
+| range_recov | positive | positive |
+| covid_spike | positive | positive |
+| modern | positive | positive |
+
+A trend follower that is long most of the time inherits the underlying asset's regime
+signs. So for this class of signal, condition 3 is largely reporting which regimes gold
+rose in. It will tend to pass for any long biased signal in this sample and fail for any
+short biased one, which is worth knowing before the remaining seven signals are judged
+by it.
+
+Worth noting separately: in the bear regime gold fell 11.5 percent annualized and
+`ma_cross` **also lost**, 3.6 percent annualized. It was short and still lost money.
+That is whipsaw, not a hedge, and it is the kind of detail a pass on condition 3 hides.
+
+### Weakness 2: `mean > 0` is a knife edge
+
+`range_recov` counts as a positive regime on an annualized mean of **+0.53 basis
+points**, Sharpe 0.051. Statistically indistinguishable from zero, and it counts exactly
+as much as `bull_run` at Sharpe 1.22.
+
+So "4 of 5" reads stronger than the data supports. Honestly it is 3 of 5 with one coin
+flip.
+
+### Why neither weakness is being fixed
+
+**The rule is frozen.** Changing a threshold after seeing a result is precisely the
+failure the pre-registration exists to prevent, and a rule that can be tightened once its
+weaknesses are visible provides no evidence at all.
+
+Both weaknesses are therefore recorded here and must appear in the graveyard write up
+rather than being quietly repaired. A documented weakness is a finding; a silently
+patched one is a fabrication.
+
+If a future version of this framework wants a stronger condition 3, the candidates are
+requiring a positive Sharpe above some threshold rather than a positive mean, or judging
+the signal against the asset's own regime returns rather than against zero. Either would
+have to be frozen in advance of the next run.
+
+---
+
 ## Current state at a glance
 
 | | |
 |---|---|
 | Commits | 4 (through `04feaf3`) |
-| Uncommitted | `sizing.py`, `costs.py`, `metrics.py`, `backtest.py`, `ma_cross.py`, `signals/__init__.py`, `run_gauntlet.py`, `CONCEPTS.md`, `CLAUDE.md`, log entries 19-20, DECISIONS.md ledger |
-| Functions implemented | 14 of 41 (plus helpers) |
+| Uncommitted | `sizing.py`, `costs.py`, `metrics.py`, `backtest.py`, `ma_cross.py`, `signals/__init__.py`, `run_gauntlet.py`, `CONCEPTS.md`, `CLAUDE.md`, log entries 19-21, DECISIONS.md ledger |
+| Functions implemented | 17 of 41 (plus helpers) |
 | Tests | 23 passing, 1 failing (roll adjustment, still a stub) |
 | Linter | clean |
-| Real results produced | `ma_cross`: OOS Sharpe 0.523, HAC t 1.47, **DSR 0.5026, DEAD** |
+| Real results produced | `ma_cross`: OOS Sharpe 0.523, HAC t 1.47, DSR 0.5026, regimes 4/5. **DEAD on condition 2** |
 
 ### Open items
 
