@@ -52,6 +52,7 @@ def main() -> None:
             signal, panel, name=name, cost_bps=DEFAULT_COST_BPS, target_vol=TARGET_ANNUAL_VOL
         )
         is_r, oos_r = split_is_oos(res.net_returns)
+        _, oos_gross = split_is_oos(res.gross_returns)
 
         stress = run_backtest(
             signal, panel, name=name, cost_bps=STRESS_COST_BPS, target_vol=TARGET_ANNUAL_VOL
@@ -65,6 +66,7 @@ def main() -> None:
                 result=res,
                 is_returns=is_r,
                 oos_returns=oos_r,
+                oos_gross_returns=oos_gross,
                 n_trials=N_TRIALS,
                 oos_sharpe_stress=sharpe(oos_stress),
             )
@@ -72,14 +74,15 @@ def main() -> None:
         regime_tables[name] = by_regime(res.net_returns)
 
     header = (
-        f"{'signal':<16}{'IS':>8}{'OOS':>8}{'@4bp':>8}{'turn':>8}"
+        f"{'signal':<16}{'IS':>8}{'gross':>8}{'net':>8}{'@4bp':>8}{'turn':>8}"
         f"{'HAC t':>8}{'DSR':>8}{'reg':>6}  verdict"
     )
     print(header)
     print("-" * (len(header) + 8))
     for v in sorted(verdicts, key=lambda x: -x.deflated_sr):
         print(
-            f"{v.signal:<16}{v.is_sharpe:>8.3f}{v.oos_sharpe:>8.3f}{v.oos_sharpe_stress:>8.3f}"
+            f"{v.signal:<16}{v.is_sharpe:>8.3f}{v.oos_sharpe_gross:>8.3f}"
+            f"{v.oos_sharpe:>8.3f}{v.oos_sharpe_stress:>8.3f}"
             f"{v.turnover:>8.2f}{v.hac_tstat:>8.2f}{v.deflated_sr:>8.3f}"
             f"{v.regimes_positive:>4}/5  {'ALIVE' if v.alive else 'DEAD'}"
         )

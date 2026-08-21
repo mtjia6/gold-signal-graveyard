@@ -26,6 +26,7 @@ class Verdict:
     signal: str
     hypothesis: str
     is_sharpe: float
+    oos_sharpe_gross: float
     oos_sharpe: float
     oos_sharpe_stress: float
     hac_tstat: float
@@ -42,6 +43,7 @@ def adjudicate(
     result: BacktestResult,
     is_returns: pd.Series,
     oos_returns: pd.Series,
+    oos_gross_returns: pd.Series,
     n_trials: int,
     oos_sharpe_stress: float,
 ) -> Verdict:
@@ -66,12 +68,15 @@ def adjudicate(
     dsr = deflated_sharpe(oos_returns, n_trials=n_trials)
     n_regimes = count_positive_regimes(result.net_returns)
 
+    # Checked IN ORDER. cause_of_death names the FIRST failure, so a signal that
+    # fails several conditions is recorded against the earliest one rather than
+    # the most flattering one.
     conditions = [
-        (oos_returns.mean() > 0, "negative out-of-sample return, net of costs"),
-        (dsr > DSR_THRESHOLD, f"deflated Sharpe {dsr:.3f}, below the {DSR_THRESHOLD} bar"),
+        (oos_returns.mean() > 0, "condition 1: OOS net return not positive"),
+        (dsr > DSR_THRESHOLD, f"condition 2: Deflated Sharpe below {DSR_THRESHOLD}"),
         (
             n_regimes >= MIN_POSITIVE_REGIMES,
-            f"positive in only {n_regimes} of 5 regimes",
+            f"condition 3: sign positive in fewer than {MIN_POSITIVE_REGIMES} of 5 regimes",
         ),
     ]
     failures = [why for ok, why in conditions if not ok]
@@ -80,6 +85,7 @@ def adjudicate(
         signal=name,
         hypothesis=hypothesis,
         is_sharpe=sharpe(is_returns),
+        oos_sharpe_gross=sharpe(oos_gross_returns),
         oos_sharpe=sharpe(oos_returns),
         oos_sharpe_stress=oos_sharpe_stress,
         hac_tstat=hac_t,
@@ -132,16 +138,16 @@ def to_markdown(
         "",
         "## The table",
         "",
-        "| Signal | IS Sharpe | OOS Sharpe | OOS @stress | Turnover | HAC t | Deflated SR "
-        "| Regimes | Verdict |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Signal | IS Sharpe | OOS gross | OOS net | OOS @stress | HAC t | Deflated SR "
+        "| Regimes | Turnover | Verdict | Cause of death |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for v in sorted(verdicts, key=lambda x: -x.deflated_sr):
         lines.append(
-            f"| `{v.signal}` | {v.is_sharpe:+.3f} | {v.oos_sharpe:+.3f} "
-            f"| {v.oos_sharpe_stress:+.3f} | {v.turnover:.2f} | {v.hac_tstat:+.2f} "
-            f"| {v.deflated_sr:.3f} | {v.regimes_positive}/5 "
-            f"| {'**ALIVE**' if v.alive else 'DEAD'} |"
+            f"| `{v.signal}` | {v.is_sharpe:+.3f} | {v.oos_sharpe_gross:+.3f} "
+            f"| {v.oos_sharpe:+.3f} | {v.oos_sharpe_stress:+.3f} | {v.hac_tstat:+.2f} "
+            f"| {v.deflated_sr:.3f} | {v.regimes_positive}/5 | {v.turnover:.2f} "
+            f"| {'**ALIVE**' if v.alive else 'DEAD'} | {v.cause_of_death or 'n/a'} |"
         )
 
     lines += ["", f"OOS @stress is the same signal charged {stress_bps:.0f} bp instead of "

@@ -16,11 +16,11 @@ Deflated Sharpe computed at N = 8 trials (see DECISIONS.md section 6 for the led
 
 ## The table
 
-| Signal | IS Sharpe | OOS Sharpe | OOS @stress | Turnover | HAC t | Deflated SR | Regimes | Verdict |
-|---|---|---|---|---|---|---|---|---|
-| `ma_cross` | +0.311 | +0.523 | +0.518 | 4.05 | +1.47 | 0.503 | 4/5 | DEAD |
-| `ts_momentum` | +0.200 | +0.507 | +0.496 | 11.34 | +1.42 | 0.482 | 3/5 | DEAD |
-| `seasonality` | +0.431 | +0.310 | +0.303 | 2.96 | +0.86 | 0.289 | 4/5 | DEAD |
+| Signal | IS Sharpe | OOS gross | OOS net | OOS @stress | HAC t | Deflated SR | Regimes | Turnover | Verdict | Cause of death |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `ma_cross` | +0.311 | +0.527 | +0.523 | +0.518 | +1.47 | 0.503 | 4/5 | 4.05 | DEAD | condition 2: Deflated Sharpe below 0.95 |
+| `ts_momentum` | +0.200 | +0.517 | +0.507 | +0.496 | +1.42 | 0.482 | 3/5 | 11.34 | DEAD | condition 2: Deflated Sharpe below 0.95 |
+| `seasonality` | +0.431 | +0.317 | +0.310 | +0.303 | +0.86 | 0.289 | 4/5 | 2.96 | DEAD | condition 2: Deflated Sharpe below 0.95 |
 
 OOS @stress is the same signal charged 4 bp instead of 2 bp.
 
@@ -30,7 +30,7 @@ OOS @stress is the same signal charged 4 bp instead of 2 bp.
 
 **Hypothesis, stated before testing:** 50/200 trend persists
 
-**Verdict: DEAD**, cause of death: deflated Sharpe 0.503, below the 0.95 bar.
+**Verdict: DEAD**, cause of death: condition 2: Deflated Sharpe below 0.95.
 
 Out of sample it returned a Sharpe of +0.523 over 4.1 units of annual turnover, with a Newey-West t-statistic of +1.47. Deflated against 8 trials the Sharpe is 0.503, meaning there is a 50% chance a set of worthless strategies would have produced something this good by selection alone. The mean return was positive in 4 of 5 frozen regimes.
 
@@ -46,7 +46,7 @@ Out of sample it returned a Sharpe of +0.523 over 4.1 units of annual turnover, 
 
 **Hypothesis, stated before testing:** Past 12m return predicts next month's sign
 
-**Verdict: DEAD**, cause of death: deflated Sharpe 0.482, below the 0.95 bar.
+**Verdict: DEAD**, cause of death: condition 2: Deflated Sharpe below 0.95.
 
 Out of sample it returned a Sharpe of +0.507 over 11.3 units of annual turnover, with a Newey-West t-statistic of +1.42. Deflated against 8 trials the Sharpe is 0.482, meaning there is a 52% chance a set of worthless strategies would have produced something this good by selection alone. The mean return was positive in 3 of 5 frozen regimes.
 
@@ -62,7 +62,7 @@ Out of sample it returned a Sharpe of +0.507 over 11.3 units of annual turnover,
 
 **Hypothesis, stated before testing:** Sep and Jan are structurally strong
 
-**Verdict: DEAD**, cause of death: deflated Sharpe 0.289, below the 0.95 bar.
+**Verdict: DEAD**, cause of death: condition 2: Deflated Sharpe below 0.95.
 
 Out of sample it returned a Sharpe of +0.310 over 3.0 units of annual turnover, with a Newey-West t-statistic of +0.86. Deflated against 8 trials the Sharpe is 0.289, meaning there is a 71% chance a set of worthless strategies would have produced something this good by selection alone. The mean return was positive in 4 of 5 frozen regimes.
 
