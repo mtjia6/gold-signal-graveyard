@@ -1639,16 +1639,186 @@ have to be frozen in advance of the next run.
 
 ---
 
+## Entry 22, 2026-08-21, Two more signals. Three dead, five to go.
+
+`ts_momentum` and `seasonality` implemented. Both needed no new data source, so they
+plugged into the existing machinery unchanged.
+
+### `ts_momentum`
+
+```python
+trail = close / close.shift(252) - 1
+position = (trail > 0).astype(float) * 2 - 1
+return position.where(trail.notna())
+```
+
+Hard +/-1 with no neutral band, per the frozen spec. A dead zone around zero would be a
+parameter, and every parameter is a trial the Deflated Sharpe must be told about.
+
+### `seasonality`
+
+```python
+month = df.index.month
+return pd.Series(np.where(np.isin(month, LONG_MONTHS), 1.0, 0.0), index=df.index)
+```
+
+Values in {0, 1} rather than {-1, +1}, deliberately. The hypothesis is that certain
+months are strong, not that the remaining months are weak, so shorting them would test a
+claim nobody made.
+
+It is the only signal in the project that needs no price history, which also makes it
+the only one immune to the futures roll problem.
+
+### Results, all three implemented signals
+
+| signal | IS | OOS | turnover | HAC t | DSR | regimes | vol |
+|---|---|---|---|---|---|---|---|
+| `ma_cross` | 0.311 | 0.523 | 4.05 | 1.47 | 0.503 | 4/5 | 0.106 |
+| `ts_momentum` | 0.200 | 0.507 | 11.34 | 1.42 | 0.482 | 3/5 | 0.107 |
+| `seasonality` | 0.431 | 0.310 | 2.96 | 0.86 | 0.289 | 4/5 | 0.042 |
+
+**All three DEAD on condition 2.** No Deflated Sharpe is within 0.45 of the 0.95 bar.
+
+### Seasonality's low volatility is dilution, not a sizing failure
+
+```
+days in market        814 of 5153  (15.8%)
+vol WHILE in market   0.106     targeted to 0.10, correct
+vol over full series  0.042     diluted by being flat 84% of the time
+```
+
+Exposure is correctly targeted on the days it trades. The full-series figure is low
+because the position is zero most of the year. Sharpe is invariant to leverage, so the
+grade is unaffected, and 0.310 out of sample is a real comparison against the others.
+
+### An expectation that was wrong: momentum turns over the MOST
+
+The prediction going in was that a twelve month lookback would flip rarely. It has the
+highest turnover of the three, 11.34 against `ma_cross`'s 4.05.
+
+```
+                direction changes    raw signal turnover    sized turnover
+ma_cross                     28                    2.85              4.05
+ts_momentum                 138                   14.19             11.34
+seasonality                  81                    3.96              2.96
+```
+
+138 direction changes against 28. The cause is mechanical rather than statistical.
+**`ma_cross` compares two smoothed series; `ts_momentum` compares today's price against
+one single day's price 252 days ago.** That lone reference point is noisy, and whenever
+it happens to sit near the current price the signal chatters. A long lookback does not
+imply a slow signal if the test built on it is a single comparison.
+
+### Turnover is a property of the sized position, not the signal
+
+The two turnover columns diverge in both directions, which is worth understanding:
+
+- `ma_cross` rises, 2.85 to 4.05, because volatility scaling adds continuous daily
+  position drift on top of the discrete flips.
+- `ts_momentum` falls, 14.19 to 11.34, because it chatters most during calm periods,
+  where the volatility scaler is holding a smaller position, so those flips move less
+  quantity than the raw count implies.
+
+Cost is charged on the sized position, which is the correct quantity: you pay to trade
+what you actually hold.
+
+---
+
+## Entry 23, 2026-08-21, The front door now shows the real work
+
+`report/graveyard.py` implemented and `scripts/run_gauntlet.py` rewritten. The project's
+committed entry point now produces the verdict table and writes `reports/graveyard.md`.
+
+### The problem this fixes
+
+Every meaningful number produced since Entry 18, the HAC statistics, the Deflated
+Sharpe, the regime tables, the verdicts, was computed in throwaway scratch scripts that
+were never part of the repository. `run_gauntlet.py` still ran a single hardcoded signal
+and printed four columns: in sample Sharpe, out of sample Sharpe, turnover, and a stress
+Sharpe.
+
+**Anyone cloning the repo and running the program would have seen none of the rigour
+that is the entire point of the project.** The work existed and the deliverable did not
+expose it. That is a hole in the deliverable rather than a limitation to be documented,
+and it is fixed rather than noted.
+
+### `adjudicate`
+
+Implements the frozen verdict rule exactly once, in one place:
+
+```python
+conditions = [
+    (oos_returns.mean() > 0,            "negative out-of-sample return, net of costs"),
+    (dsr > DSR_THRESHOLD,               f"deflated Sharpe {dsr:.3f}, below the bar"),
+    (n_regimes >= MIN_POSITIVE_REGIMES, f"positive in only {n_regimes} of 5 regimes"),
+]
+failures = [why for ok, why in conditions if not ok]
+alive = not failures
+cause_of_death = failures[0] if failures else ""
+```
+
+Everything is judged on the **out of sample, net of cost** series. The in sample figure
+is reported for context and carries no weight in the verdict, because a number computed
+on data used during development is optimistically biased by an amount nobody can
+estimate.
+
+### `to_markdown`
+
+Writes the report: headline table sorted by Deflated Sharpe, the verdict rule quoted
+above the results so the reader sees the standard before the outcome, a per signal
+autopsy carrying the hypothesis as stated before testing, the full regime breakdown, and
+a caveats section.
+
+The autopsies translate the Deflated Sharpe into a sentence rather than leaving it as a
+number. For `seasonality`: *there is a 71 percent chance a set of worthless strategies
+would have produced something this good by selection alone.*
+
+### Three decisions inside the script
+
+**`N_TRIALS = 8`, read from the ledger, deliberately not `len(GRADED)`.** Deriving the
+trial count from how many signals happen to be implemented would make every verdict
+quietly more flattering as work progressed, which is precisely backwards. All eight are
+candidates; three merely exist yet.
+
+**`GRADED` lists only implemented signals.** Including the five stubs would emit rows of
+NaN that read like results.
+
+**The caveats section is generated, not optional.** It states the unimplemented roll
+adjustment, the 114 corrupt bars from Entry 6, and both weaknesses in condition 3 from
+Entry 21. A report presenting verdicts while omitting what they rest on would be
+committing the exact failure this project argues against.
+
+### Output
+
+```
+signal                IS     OOS    @4bp    turn   HAC t     DSR   reg  verdict
+ma_cross           0.311   0.523   0.518    4.05    1.47   0.503   4/5  DEAD
+ts_momentum        0.200   0.507   0.496   11.34    1.42   0.482   3/5  DEAD
+seasonality        0.431   0.310   0.303    2.96    0.86   0.289   4/5  DEAD
+
+0 of 3 survived.
+```
+
+### A formatting bug caught on first read
+
+The regimes sentence was emitted as a separate list element rather than appended to the
+preceding string, so it rendered as its own line with a leading space. Fixed by
+concatenation. Worth recording only because it was caught by reading the generated
+output rather than by assuming the generator was correct, which is the habit that
+matters.
+
+---
+
 ## Current state at a glance
 
 | | |
 |---|---|
 | Commits | 4 (through `04feaf3`) |
-| Uncommitted | `sizing.py`, `costs.py`, `metrics.py`, `backtest.py`, `ma_cross.py`, `signals/__init__.py`, `run_gauntlet.py`, `CONCEPTS.md`, `CLAUDE.md`, log entries 19-21, DECISIONS.md ledger |
-| Functions implemented | 17 of 41 (plus helpers) |
+| Uncommitted | `sizing.py`, `costs.py`, `metrics.py`, `backtest.py`, `ma_cross.py`, `signals/__init__.py`, `run_gauntlet.py`, `CONCEPTS.md`, `CLAUDE.md`, log entries 19-23, DECISIONS.md ledger, graveyard report |
+| Functions implemented | 21 of 41 (plus helpers) |
 | Tests | 23 passing, 1 failing (roll adjustment, still a stub) |
 | Linter | clean |
-| Real results produced | `ma_cross`: OOS Sharpe 0.523, HAC t 1.47, DSR 0.5026, regimes 4/5. **DEAD on condition 2** |
+| Real results produced | `reports/graveyard.md`, generated by `run_gauntlet.py`. 3 of 8 signals judged, **0 survived** |
 
 ### Open items
 
@@ -1660,22 +1830,30 @@ have to be frozen in advance of the next run.
 
 ### Next piece of work
 
-`engine/costs.py`, then `engine/backtest.py`, which is where the first Sharpe ratio
-gets produced. The calculations still unwritten, each of which gets explained in the
-entry that builds it: strategy return (position × return, with the mandatory one-bar
-execution lag), turnover, transaction costs, Sharpe, maximum drawdown, the Newey–West
-t-statistic, and the Deflated Sharpe. `sizing.py` has no dedicated tests yet; the checks above were run
-ad hoc and should become permanent tests, particularly the lookahead probe.
+**1. The futures roll adjustment.** `data/roll.py` is still a stub and this is the last
+untested correctness risk sitting underneath every number in `reports/graveyard.md`. A
+continuous gold series spliced from expiring contracts carries a phantom price gap at
+each roll, systematically negative under contango, that no position could have earned.
+It looks like a market phenomenon rather than a bug. Explained in full in `CONCEPTS.md`
+Part 4.6. The one red test in the suite is its detection check.
 
-After that, the remaining loaders (`load_fred`, `load_cot`,
-`load_all`), then futures roll adjustment.
+**2. The corrupt-bar decision.** Open since Entry 6 and still unmade: 114 bars with a
+close above the session high, concentrated in 2006 to 2011. Disclose, move the sample
+start to 2009, or gate it in the loader. It changes a frozen parameter, so it needs its
+own commit against DECISIONS.md.
 
-Before roll adjustment gets written, the underlying concept needs to be understood
-properly: it is the single largest correctness risk in the project. In outline: a
-continuous futures price series is many expiring contracts glued together, and at each
-join the old and new contracts trade at genuinely different prices. Glue the raw
-prices together and that gap appears in the data as a price move that no trader could
-ever have captured. Gold contracts further out in time are normally *more* expensive,
-so these fake gaps are systematically negative: producing a persistent, entirely
-artificial downward drift that looks exactly like a real market phenomenon. This
-lecture has not happened yet.
+**3. The five remaining signals.** `carry`, `cot_contrarian`, `real_yield_dev`,
+`gold_silver_ratio`, and `dollar_trend`. Each needs a data source the project does not
+yet load, so `load_fred`, `load_cot`, and `load_all` come first. Two carry known
+complications recorded at Entry 2: `carry` may be unbuildable from free front-month-only
+data, and `gold_silver_ratio` is genuinely a spread trade that the current single-asset
+engine cannot express.
+
+**4. `sizing.py` still has no dedicated tests.** The lookahead probe from Entry 10 was
+run ad hoc and should be permanent, since the `.shift(1)` it protects is exactly the kind
+of line someone tidies away.
+
+**5. The overfitting sidecar**, once the rest is done. Grid-search moving average pairs,
+show the best one's in-sample curve, show it collapsing out of sample, and show that the
+Deflated Sharpe would have flagged it in advance at the honest trial count.
+

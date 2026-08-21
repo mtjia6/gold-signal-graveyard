@@ -20,4 +20,18 @@ LOOKBACK_DAYS = 252  # Frozen.
 
 @register("ts_momentum", "Past 12m return predicts next month's sign", ("close",))
 def ts_momentum(df: pd.DataFrame) -> pd.Series:
-    raise NotImplementedError
+    """+1 if the trailing 252-day return is positive, else -1. NaN until it exists.
+
+    Hard +/-1 with no neutral band, per the frozen spec. A dead zone around zero
+    would be a parameter, and every parameter is a trial the Deflated Sharpe has
+    to be told about.
+
+    The first LOOKBACK_DAYS rows have no trailing return, so they stay NaN rather
+    than being filled with a position. Same reasoning as ma_cross: filling them
+    would have the strategy trading before its own signal is defined, and a
+    constant fill reads as a deliberate year-long directional bet.
+    """
+    close = df["close"]
+    trail = close / close.shift(LOOKBACK_DAYS) - 1
+    position = (trail > 0).astype(float) * 2 - 1
+    return position.where(trail.notna())
