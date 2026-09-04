@@ -7,6 +7,7 @@ __pycache__/
 .ruff_cache/
 .ipynb_checkpoints/
 CONCEPTS.md
+LIMITATIONS.md
 
 # Data: never commit fetched market data. Cached, reproducible via fetch_data.py.
 data/raw/
@@ -14,6 +15,9 @@ data/cache/
 
 # Generated output. Committed only when it is a real, final result.
 reports/figures/*.png
+
+# Personal interview prep, not part of the project
+interview_prep.md
 
 # macOS
 .DS_Store
